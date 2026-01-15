@@ -1,2 +1,6 @@
-pyserial>=3.5
-rich>=13.7.0
+flet
+pyserial
+rich
+textual
+textual-plotext
+plotext

@@ -1,75 +1,52 @@
-# Open EGM-4 Interface
+# Open EGM-4
 
-A terminal-based interface for the PP Systems EGM-4 Environmental Gas Monitor.
-
-## Quick Start
-
-### Installation
-
-```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-### Running the TUI
-
-```bash
-./venv/bin/python tui_main.py
-```
+Terminal interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Features
 
-- **Live Data Display**: Real-time terminal output showing incoming serial data
-- **Statistics Panel**: Track data points and latest readings
-- **CSV Export**: Save all recorded data to timestamped CSV files
-- **Simple Controls**: 
-  - Ctrl+C to stop monitoring
-  - Automatic prompt to export data on exit
+- **Real-time CO₂ charting** with plotext
+- **Auto-saves raw data** to `raw_dump_YYYY-MM-DD.log`
+- **CSV export** with parsed columns
+- **Chamber stability** indicator
+- **Auto-connects** to USB serial port
 
-## Serial Configuration
+## Installation
 
-The interface is configured for EGM-4 default settings:
-- Baud rate: 9600
-- Data bits: 8
-- Parity: None
-- Stop bits: 2
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
 ## Usage
 
-1. Connect your EGM-4 to your computer via USB
-2. Run `./venv/bin/python tui_main.py`
-3. Select the appropriate serial port from the list
-4. Monitor live data in the terminal
-5. Press Ctrl+C when done
-6. Choose whether to export data to CSV
-
-## Project Structure
-
-```
-open-egm4/
-├── tui_main.py           # Terminal interface (main entry point)
-├── src/
-│   └── egm_interface.py  # Serial communication backend
-├── requirements.txt
-└── README.md
+```bash
+./venv/bin/python main.py
 ```
 
-## Troubleshooting
+### Keyboard Shortcuts
 
-**No ports listed?**
-- Ensure the EGM-4 is connected and powered on
-- Check that USB drivers are installed
-- Try unplugging and reconnecting the device
+| Key | Action |
+|-----|--------|
+| `Q` | Quit |
+| `E` | Export CSV |
+| `C` | Clear log/chart |
+| `H` | Toggle help |
+| `R` | Reconnect |
 
-**Connection fails?**
-- Verify the EGM-4 is not being accessed by another program
-- Check cable connections
-- Ensure you have permission to access serial ports (may need `sudo` on Linux)
+### EGM-4 Device
 
-**No data appearing?**
-- Confirm the EGM-4 is transmitting (check device settings)  
-- Verify baud rate matches device settings (9600 default)
+- **Data Dump**: Press 4 → 2 → any key
+- **Live Mode**: Press 1 (Measurement)
+
+## Output Files
+
+- `raw_dump_YYYY-MM-DD.log` - Raw serial data (auto-saved)
+- `egm4_YYYYMMDD_HHMMSS.csv` - Parsed data export
+
+## Requirements
+
+- Python 3.8+
+- pyserial
+- textual
+- textual-plotext

@@ -2,6 +2,9 @@
 EGM4-manual.pdf
 EGM4-chamber-manual.pdf
 
+# csv files that are exported from the EGM-4
+*.csv
+*.log
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

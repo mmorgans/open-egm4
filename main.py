@@ -1,14 +1,14 @@
-import flet as ft
-from src.ui.app_layout import EGMApp
+#!/usr/bin/env python3
+"""
+Open EGM-4 - Entry Point
 
-import logging
-logging.basicConfig(level=logging.INFO)
+A professional terminal interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
-def main(page: ft.Page):
-    page.title = "Open EGM-4 Interface"
-    
-    app = EGMApp(page)
-    page.add(app.build())
+Usage:
+    ./venv/bin/python main.py
+"""
 
-if __name__ == '__main__':
-    ft.app(target=main)
+from src.tui.app import main
+
+if __name__ == "__main__":
+    main()
