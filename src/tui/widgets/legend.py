@@ -7,14 +7,15 @@ from textual.widget import Widget
 
 # SRC mode channels (8 channels)
 CHANNEL_COLORS_SRC = {
-    'cr':   ('1', 'Cr',   '#3296FF'),   # CO2 Raw
+    'cr':   ('1', 'Cr',   '#FF3232'),   # CO2 Raw (Red)
     'hr':   ('2', 'Hr',   '#00FFC8'),   # H2O Raw
     'par':  ('3', 'PAR',  '#FFFF64'),   # Light
     'rh':   ('4', '%RH',  '#64FF64'),   # Chamber humidity
-    'temp': ('5', 'Temp', '#FFB400'),   # Soil temperature
-    'dc':   ('6', 'DC',   '#FF5050'),   # Delta CO2
+    'temp': ('5', 'Temp', '#3264FF'),   # Soil temperature (Blue)
+    'dc':   ('6', 'DC',   '#32FF32'),   # Delta CO2 (Green)
     'sr':   ('7', 'SR',   '#C8C8C8'),   # Soil respiration
     'atmp': ('8', 'ATMP', '#B4B4FF'),   # Atm pressure
+    'dt':   ('9', 'DT',   '#646464'),   # Delta Time (Dark Grey)
 }
 
 # IRGA mode channels (3 channels - base EGM only)

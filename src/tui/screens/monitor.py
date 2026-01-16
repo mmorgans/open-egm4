@@ -19,39 +19,14 @@ from src.tui.widgets.legend import ChannelLegend
 from src.egm_interface import EGM4Serial
 from src.tui.screens.bigmode import BigModeScreen
 
-
 class MonitorScreen(Screen):
     """Main monitoring dashboard screen."""
 
+    # Defer to styles.tcss or use simple layout
     DEFAULT_CSS = """
     MonitorScreen {
-        layout: grid;
-        grid-size: 2 3;
-        grid-columns: 2fr 1fr;
-        grid-rows: 2fr 1 1fr;
-    }
-    
-    #chart {
-        column-span: 1;
-        row-span: 1;
-    }
-    
-    #stats {
-        column-span: 1;
-        row-span: 2;
-        padding: 1;
-    }
-    
-    #legend {
-        column-span: 1;
-        row-span: 1;
-        padding: 0 1;
-    }
-    
-    #log {
-        column-span: 2;
-        row-span: 1;
-        padding: 1;
+        layout: vertical;
+        padding: 0;
     }
     """
 
@@ -71,6 +46,7 @@ class MonitorScreen(Screen):
         ("6", "select_dc", "DC"),
         ("7", "select_sr", "SR"),
         ("8", "select_atmp", "ATMP"),
+        ("9", "select_dt", "DT"),
         # Span control
         ("=", "increase_span", "+ Span"),
         ("+", "increase_span", None),
@@ -99,14 +75,18 @@ class MonitorScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield CO2PlotWidget(id="chart")
-        yield StatsWidget(id="stats")
-        yield ChannelLegend(id="legend")
-        yield LogWidget(id="log")
+        with Horizontal(id="main-container"):
+            with Vertical(id="left-panel"):
+                yield CO2PlotWidget(id="chart")
+                yield ChannelLegend(id="legend")
+            with Vertical(id="right-panel"):
+                yield StatsWidget(id="stats")
+                yield LogWidget(id="log")
         yield Footer()
 
     def on_mount(self) -> None:
         """Start serial connection when screen mounts."""
+
         self.start_serial_reading()
         
         # Update stats widget with connection info
@@ -149,9 +129,9 @@ class MonitorScreen(Screen):
                 log = self.query_one("#log", LogWidget)
                 log.log_success(f"USB reconnected: {self.port}")
 
-    def on_unmount(self) -> None:
+    async def on_unmount(self) -> None:
         """Clean up when screen unmounts."""
-        self.serial.disconnect()
+        await self.serial.disconnect()
         if self.raw_log_file:
             try:
                 self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
@@ -159,11 +139,18 @@ class MonitorScreen(Screen):
             except Exception:
                 pass
 
-    @work(thread=True, exclusive=True)
-    def start_serial_reading(self) -> None:
+    @work(exclusive=True)
+    async def start_serial_reading(self) -> None:
         """Background worker for reading serial data."""
+        # Callback wrapper to bridge to UI thread
         def on_data(raw_line: str, parsed_data: dict) -> None:
-            # Save to raw log immediately (crash-proof)
+            # We are in an async worker, so we should be careful.
+            # EGM4Serial.process_loop awaits things, so it runs in event loop.
+            # We can directly post message or use call_from_others.
+            # But wait, EGM4Serial calls this callback synchronously from its await loop.
+            # So we are in the main thread's event loop.
+            
+            # Save to raw log immediately
             if self.raw_log_file:
                 try:
                     self.raw_log_file.write(raw_line + '\n')
@@ -171,7 +158,6 @@ class MonitorScreen(Screen):
                 except Exception:
                     pass
             
-            # Post message to UI thread
             self.post_message(DataReceived(raw_line=raw_line, parsed=parsed_data))
 
         def on_error(msg: str) -> None:
@@ -180,8 +166,14 @@ class MonitorScreen(Screen):
         self.serial.data_callback = on_data
         self.serial.error_callback = on_error
         
-        if not self.serial.connect(self.port):
+        # Connect asynchronously
+        success = await self.serial.connect(self.port)
+        if not success:
             self.post_message(SerialError(message=f"Failed to connect to {self.port}"))
+            return
+
+        # Start processing loop (this blocks the worker, which is fine for async worker)
+        await self.serial.process_loop()
 
     @on(Message)
     def handle_data_received(self, event: Message) -> None:
@@ -263,10 +255,10 @@ class MonitorScreen(Screen):
             stats = self.query_one("#stats", StatsWidget)
             stats.is_connected = False
 
-    def action_quit_app(self) -> None:
+    async def action_quit_app(self) -> None:
         """Save work and quit the application."""
         # Close serial connection
-        self.serial.disconnect()
+        await self.serial.disconnect()
         
         # Close log file
         if self.raw_log_file:
@@ -368,6 +360,9 @@ class MonitorScreen(Screen):
 
     def action_select_atmp(self) -> None:
         self._select_channel("atmp")
+
+    def action_select_dt(self) -> None:
+        self._select_channel("dt")
 
     # Span control actions
     def action_increase_span(self) -> None:

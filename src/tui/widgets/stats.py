@@ -76,74 +76,63 @@ class StatsWidget(Widget):
 
     def render(self) -> RenderableType:
         """Render the stats panel."""
-        # USB connection status (not EGM communication - that requires data flow)
-        if self.is_connected:
-            conn_indicator = Text("USB ATTACHED", style="bold #006400")
-        else:
-            conn_indicator = Text("USB DETACHED", style="bold #CC0000")
-        
-        # Build stats table
-        table = Table(show_header=False, box=None, padding=(0, 1))
-        table.add_column("Label", style="cyan")
-        table.add_column("Value", justify="right")
-        
-        # Current CO2 - use dark colors for contrast
-        if self.current_co2 is not None:
-            co2 = self.current_co2
-            if co2 < 400:
-                co2_style = "bold #006400"  # Dark green
-            elif co2 < 800:
-                co2_style = "bold #CC6600"  # Dark orange
-            else:
-                co2_style = "bold #CC0000"  # Dark red
-            table.add_row("Current", Text(f"{co2:.0f} ppm", style=co2_style))
-        else:
-            table.add_row("Current", Text("--- ppm", style="dim"))
-        
-        # Stats
-        stats = self._calculate_stats()
-        if stats["avg"] is not None:
-            table.add_row("Average", f"{stats['avg']:.1f} ppm")
-            table.add_row("Min/Max", f"{stats['min']:.0f} / {stats['max']:.0f}")
-        else:
-            table.add_row("Average", "---")
-            table.add_row("Min/Max", "---")
-        
-        # Stability - use dark colors
-        stability = stats["stability"]
-        if stability == "STABLE":
-            stab_text = Text(f"[+] {stability}", style="#006400")  # Dark green
-        elif stability == "VARIABLE":
-            stab_text = Text(f"[~] {stability}", style="#CC6600")  # Dark orange  
-        elif stability == "NOISY":
-            stab_text = Text(f"[!] {stability}", style="#CC0000")  # Dark red
-        else:
-            stab_text = Text(f"[ ] {stability}", style="dim")
-        table.add_row("Signal", stab_text)
-        
-        # Record count
-        table.add_row("Records", str(self.record_count))
-        
-        # Paused indicator
-        if self.is_paused:
-            table.add_row("", Text("|| PAUSED", style="bold #CC6600"))
-        
-        # Port info
-        port_text = Text(self.port_name if self.port_name else "---", style="dim")
-        
-        # Compose header content
-        header = Text()
-        header.append_text(conn_indicator)
-        header.append("\n")
-        header.append_text(port_text)
-        header.append("\n\n")
-        
-        # Use Group to combine text and table
         from rich.console import Group
-        content = Group(header, table)
+        from rich import box
         
+        # Connection Status
+        if self.is_connected:
+            conn_style = "bold cyan"
+            conn_text = "CONNECTED"
+            icon = "●"
+        else:
+            conn_style = "bold red"
+            conn_text = "DISCONNECTED"
+            icon = "○"
+            
+        header = Text()
+        header.append(f"{icon} {conn_text}\n", style=conn_style)
+        header.append(self.port_name or "Scanning...", style="dim cyan")
+        header.append("\n")
+
+        # Main Stats Table
+        table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+        table.add_column("Key", style="cyan dim")
+        table.add_column("Value", justify="right", style="bold white")
+
+        # Current CO2
+        if self.current_co2 is not None:
+            val = self.current_co2
+            if val < 400:
+                color = "green"
+            elif val < 1000:
+                color = "yellow"
+            else:
+                color = "red"
+            table.add_row("CO2", Text(f"{val:.0f} ppm", style=f"bold {color}"))
+        else:
+            table.add_row("CO2", Text("---", style="dim"))
+
+        # Meta Stats
+        stats = self._calculate_stats()
+        avg = f"{stats['avg']:.1f}" if stats['avg'] else "-"
+        rng = f"{stats['min']:.0f}-{stats['max']:.0f}" if stats['min'] else "-"
+        
+        table.add_row("Average", avg)
+        table.add_row("Range", rng)
+        table.add_row("Records",str(self.record_count))
+
+        # Stability
+        stab = stats['stability']
+        stab_color = "green" if stab == "STABLE" else "yellow" if stab == "VARIABLE" else "red"
+        if stab == "WAITING": stab_color = "dim white"
+        table.add_row("Signal", Text(stab, style=stab_color))
+
+        if self.is_paused:
+             table.add_row("", Text("PAUSED", style="bold red reverse"))
+
         return Panel(
-            content,
-            title="[bold]System Status[/bold]",
-            border_style="cyan",
+            Group(header, table),
+            title="System Status",
+            border_style="cyan dim",
+            box=box.ROUNDED
         )

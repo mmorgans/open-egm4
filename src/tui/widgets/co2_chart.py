@@ -12,14 +12,15 @@ from textual_plotext import PlotextPlot
 #   mV1 = PAR, mV2 = %RH, mV3 = Temp, mV4 = DC, mV5 = DT (counter, not plotted)
 # Format: (key, short_name, full_name, unit, color RGB, typical_range)
 CHANNELS_SRC = {
-    'cr':   ('1', 'Cr',   'CO2 Raw',          'ppm',           (50, 150, 255),   (0, 2000)),
+    'cr':   ('1', 'Cr',   'CO2 Raw',          'ppm',           (255, 50, 50),    (0, 2000)),   # Red
     'hr':   ('2', 'Hr',   'H2O Raw',          'mb',            (0, 255, 200),    (0, 50)),
     'par':  ('3', 'PAR',  'Light (PAR)',      'umol/m2/s',     (255, 255, 100),  (0, 2000)),
     'rh':   ('4', '%RH',  'Chamber Humidity', '%',             (100, 255, 100),  (0, 100)),
-    'temp': ('5', 'Temp', 'Soil Temperature', '°C',            (255, 180, 0),    (-10, 50)),
-    'dc':   ('6', 'DC',   'Delta CO2',        'ppm',           (255, 80, 80),    (-500, 500)),
+    'temp': ('5', 'Temp', 'Soil Temperature', '°C',            (50, 100, 255),   (-10, 50)),   # Blue
+    'dc':   ('6', 'DC',   'Delta CO2',        'ppm',           (50, 255, 50),    (-500, 500)), # Green
     'sr':   ('7', 'SR',   'Soil Respiration', 'gCO2/m2/hr',    (200, 200, 200),  (-100, 100)),
     'atmp': ('8', 'ATMP', 'Atm Pressure',     'mb',            (180, 180, 255),  (900, 1100)),
+    'dt':   ('9', 'DT',   'Delta Time',       's',             (100, 100, 100),  (0, 200)),    # Dark Grey
 }
 
 # IRGA (base EGM, no external probe) - only core readings
@@ -120,7 +121,7 @@ class CO2PlotWidget(PlotextPlot):
             ch = 'cr'  # Fall back to CO2
             self._active_channel = ch
         
-        key, short_name, full_name, unit, color, (y_min, y_max) = self._channels_config[ch]
+        key, short_name, full_name, unit, color, (typical_min, typical_max) = self._channels_config[ch]
         
         # Get data from storage
         full_data = list(self._channels[ch])
@@ -138,15 +139,28 @@ class CO2PlotWidget(PlotextPlot):
             
             self.plt.plot(x_values, y_values, marker=self.marker, color=color)
             
-            # Dynamic Y limits
+            # Auto-scaling logic
             data_min = min(y_values)
             data_max = max(y_values)
-            plot_min = min(y_min, data_min - abs(data_min) * 0.1)
-            plot_max = max(y_max, data_max + abs(data_max) * 0.1)
+            data_span = data_max - data_min
             
-            if plot_min == plot_max:
-                plot_min -= 10
-                plot_max += 10
+            # Determine minimum allowed span (e.g., 5% of typical range)
+            # This prevents zooming in too effectively on noise
+            typical_span = abs(typical_max - typical_min)
+            min_span = typical_span * 0.05
+            if min_span == 0: min_span = 1.0
+            
+            # Calculate padded limits
+            padding = max(data_span * 0.1, min_span * 0.1)
+            plot_min = data_min - padding
+            plot_max = data_max + padding
+            
+            # Ensure minimum span is respected
+            current_span = plot_max - plot_min
+            if current_span < min_span:
+                center = (plot_min + plot_max) / 2
+                plot_min = center - (min_span / 2)
+                plot_max = center + (min_span / 2)
             
             self.plt.ylim(plot_min, plot_max)
             
@@ -154,7 +168,7 @@ class CO2PlotWidget(PlotextPlot):
             title = f"{short_name}: {current:.1f} {unit}  |  Plot:{self._current_plot}  Span:{self._max_points}"
         else:
             title = f"{short_name} ({full_name})  |  Waiting for data..."
-            self.plt.ylim(y_min, y_max)
+            self.plt.ylim(typical_min, typical_max)
         
         self.plt.title(title)
         self.plt.xlabel("Samples (newest ->)")

@@ -2,15 +2,19 @@
 
 /* Global */
 Screen {
-    background: $surface;
+    background: #111;
 }
 
 Header {
     dock: top;
+    background: #222;
+    color: #0f0;
 }
 
 Footer {
     dock: bottom;
+    background: #222;
+    color: #888;
 }
 
 /* Connect Screen */
@@ -20,67 +24,73 @@ ConnectScreen {
 
 ConnectScreen #logo {
     text-align: center;
-    color: $primary;
+    color: #0f0;
     margin-bottom: 1;
+    text-style: bold;
 }
 
 ConnectScreen #port-list {
     width: 70;
-    height: auto;
     max-height: 12;
     margin: 1 0;
-    border: solid $primary;
+    border: rounded #444;
+    background: #1a1a1a;
 }
 
 ConnectScreen #connect-container {
     width: 70;
-    height: auto;
     align: center middle;
-}
-
-ConnectScreen #connect-btn {
-    margin-top: 1;
-    width: 100%;
-}
-
-ConnectScreen #scan-btn {
-    margin-top: 1;
-    width: 100%;
 }
 
 ConnectScreen #status {
     margin-top: 2;
     text-align: center;
-    color: $text-muted;
+    color: #666;
 }
 
 /* Monitor Screen */
 MonitorScreen {
-    layout: grid;
-    grid-size: 2 2;
-    grid-columns: 2fr 1fr;
-    grid-rows: 2fr 1fr;
-    padding: 0;
+    layout: vertical;
+    padding: 0 1;
+}
+
+#main-container {
+    height: 1fr;
+    width: 100%;
+}
+
+#left-panel {
+    width: 3fr;
+    height: 100%;
+    margin-right: 1;
+}
+
+#right-panel {
+    width: 1fr;
+    height: 100%;
 }
 
 MonitorScreen #chart {
-    column-span: 1;
-    row-span: 1;
-    margin: 1;
-    border: solid $success;
+    height: 1fr;
+    margin: 0;
+    border: rounded #444; /* Clean subtle border */
+    padding: 1;
 }
 
+MonitorScreen #legend {
+    height: 1;
+    margin: 0 1;
+}
+
+/* Stats widget handles its own border via Rich Panel */
 MonitorScreen #stats {
-    column-span: 1;
-    row-span: 1;
-    margin: 1;
+    height: auto;
+    margin-bottom: 1;
 }
 
 MonitorScreen #log {
-    column-span: 2;
-    row-span: 1;
-    margin: 1;
-    border: solid $primary;
+    height: 1fr;
+    border: rounded #444;
 }
 
 /* Widgets */
