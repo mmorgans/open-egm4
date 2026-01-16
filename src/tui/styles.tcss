@@ -33,7 +33,7 @@ ConnectScreen #port-list {
     width: 70;
     max-height: 12;
     margin: 1 0;
-    border: rounded #444;
+    border: round #444;
     background: #1a1a1a;
 }
 
@@ -73,7 +73,7 @@ MonitorScreen {
 MonitorScreen #chart {
     height: 1fr;
     margin: 0;
-    border: rounded #444; /* Clean subtle border */
+    border: round #444; /* Clean subtle border */
     padding: 1;
 }
 
@@ -90,7 +90,7 @@ MonitorScreen #stats {
 
 MonitorScreen #log {
     height: 1fr;
-    border: rounded #444;
+    border: round #444;
 }
 
 /* Widgets */
