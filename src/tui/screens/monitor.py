@@ -1,0 +1,401 @@
+"""Monitor Screen - Live data monitoring dashboard."""
+
+import csv
+import datetime
+from dataclasses import dataclass
+from pathlib import Path
+
+from textual import on, work
+from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.message import Message
+from textual.screen import Screen
+from textual.widgets import Footer, Header, Static
+
+from src.tui.widgets.co2_chart import CO2PlotWidget
+from src.tui.widgets.stats import StatsWidget
+from src.tui.widgets.log import LogWidget
+from src.tui.widgets.legend import ChannelLegend
+from src.egm_interface import EGM4Serial
+from src.tui.screens.bigmode import BigModeScreen
+
+
+class MonitorScreen(Screen):
+    """Main monitoring dashboard screen."""
+
+    DEFAULT_CSS = """
+    MonitorScreen {
+        layout: grid;
+        grid-size: 2 3;
+        grid-columns: 2fr 1fr;
+        grid-rows: 2fr 1 1fr;
+    }
+    
+    #chart {
+        column-span: 1;
+        row-span: 1;
+    }
+    
+    #stats {
+        column-span: 1;
+        row-span: 2;
+        padding: 1;
+    }
+    
+    #legend {
+        column-span: 1;
+        row-span: 1;
+        padding: 0 1;
+    }
+    
+    #log {
+        column-span: 2;
+        row-span: 1;
+        padding: 1;
+    }
+    """
+
+    BINDINGS = [
+        ("q", "quit_app", "Quit"),
+        ("c", "clear", "Clear Data"),
+        ("e", "export", "Export CSV"),
+        ("p", "pause", "Pause/Resume"),
+        ("b", "big_mode", "Field Mode"),
+        ("d", "app.toggle_dark", "Dark/Light"),
+        # Channel selection (SRC mode: 8 channels)
+        ("1", "select_cr", "Cr"),
+        ("2", "select_hr", "Hr"),
+        ("3", "select_par", "PAR"),
+        ("4", "select_rh", "%RH"),
+        ("5", "select_temp", "Temp"),
+        ("6", "select_dc", "DC"),
+        ("7", "select_sr", "SR"),
+        ("8", "select_atmp", "ATMP"),
+        # Span control
+        ("=", "increase_span", "+ Span"),
+        ("+", "increase_span", None),
+        ("-", "decrease_span", "- Span"),
+        ("_", "decrease_span", None),
+    ]
+
+    @dataclass
+    class Disconnected(Message):
+        """Message sent when disconnecting."""
+        pass
+
+    def __init__(
+        self,
+        port: str,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes)
+        self.port = port
+        self.serial = EGM4Serial()
+        self.is_paused = False
+        self.recorded_data: list[tuple[str, str]] = []
+        self.raw_log_file = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield CO2PlotWidget(id="chart")
+        yield StatsWidget(id="stats")
+        yield ChannelLegend(id="legend")
+        yield LogWidget(id="log")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        """Start serial connection when screen mounts."""
+        self.start_serial_reading()
+        
+        # Update stats widget with connection info
+        stats = self.query_one("#stats", StatsWidget)
+        stats.port_name = self.port
+        stats.is_connected = True
+        
+        # Log connection
+        log = self.query_one("#log", LogWidget)
+        log.log_success(f"USB attached: {self.port}")
+        
+        # Start periodic USB port monitoring
+        self._usb_monitor = self.set_interval(2.0, self._check_usb_port)
+        
+        # Open raw log file
+        log_filename = f"raw_dump_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+        try:
+            self.raw_log_file = open(log_filename, 'a')
+            self.raw_log_file.write(f"\n--- Session started {datetime.datetime.now().isoformat()} ---\n")
+        except Exception:
+            pass
+
+    def _check_usb_port(self) -> None:
+        """Check if the USB port is still present."""
+        from serial.tools import list_ports
+        
+        available_ports = [p.device for p in list_ports.comports()]
+        stats = self.query_one("#stats", StatsWidget)
+        
+        if self.port not in available_ports:
+            # Port disappeared - USB unplugged
+            if stats.is_connected:
+                stats.is_connected = False
+                log = self.query_one("#log", LogWidget)
+                log.log_error(f"USB disconnected: {self.port}")
+        else:
+            # Port present
+            if not stats.is_connected:
+                stats.is_connected = True
+                log = self.query_one("#log", LogWidget)
+                log.log_success(f"USB reconnected: {self.port}")
+
+    def on_unmount(self) -> None:
+        """Clean up when screen unmounts."""
+        self.serial.disconnect()
+        if self.raw_log_file:
+            try:
+                self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
+                self.raw_log_file.close()
+            except Exception:
+                pass
+
+    @work(thread=True, exclusive=True)
+    def start_serial_reading(self) -> None:
+        """Background worker for reading serial data."""
+        def on_data(raw_line: str, parsed_data: dict) -> None:
+            # Save to raw log immediately (crash-proof)
+            if self.raw_log_file:
+                try:
+                    self.raw_log_file.write(raw_line + '\n')
+                    self.raw_log_file.flush()
+                except Exception:
+                    pass
+            
+            # Post message to UI thread
+            self.post_message(DataReceived(raw_line=raw_line, parsed=parsed_data))
+
+        def on_error(msg: str) -> None:
+            self.post_message(SerialError(message=msg))
+
+        self.serial.data_callback = on_data
+        self.serial.error_callback = on_error
+        
+        if not self.serial.connect(self.port):
+            self.post_message(SerialError(message=f"Failed to connect to {self.port}"))
+
+    @on(Message)
+    def handle_data_received(self, event: Message) -> None:
+        """Handle incoming serial data."""
+        if not isinstance(event, DataReceived):
+            return
+        
+        if self.is_paused:
+            return
+        
+        parsed = event.parsed
+        rec_type = parsed.get('type', 'unknown')
+        
+        chart = self.query_one("#chart", CO2PlotWidget)
+        stats = self.query_one("#stats", StatsWidget)
+        log = self.query_one("#log", LogWidget)
+        
+        timestamp = datetime.datetime.now().isoformat()
+        self.recorded_data.append((timestamp, event.raw_line))
+        
+        if rec_type == 'R':
+            co2 = parsed.get('co2_ppm', 0)
+            record = parsed.get('record', 0)
+            plot = parsed.get('plot', 0)
+            
+            chart.add_data(parsed)
+            stats.add_reading(co2)
+            stats.record_count += 1
+            log.log_data(plot, record, co2)
+            
+            # Update big mode screen if it's active
+            if hasattr(self, '_big_screen') and self._big_screen.is_current:
+                self._big_screen.current_co2 = co2
+                self._big_screen.record_count = stats.record_count
+                # Calculate stability
+                history = list(stats._history)
+                if len(history) >= 10:
+                    import statistics
+                    stdev = statistics.stdev(history[-10:])
+                    if stdev < 5:
+                        self._big_screen.stability = "STABLE"
+                    elif stdev < 20:
+                        self._big_screen.stability = "VARIABLE"
+                    else:
+                        self._big_screen.stability = "NOISY"
+            
+        elif rec_type == 'B':
+            co2 = parsed.get('co2_ppm', 0)
+            log.log_info(f"Device startup: EGM4, CO₂: {co2:.1f}")
+            
+        elif rec_type == 'Z':
+            log.log_complete()
+            self.notify("Download Complete!", severity="information", timeout=5)
+            # Audible beep
+            self.app.bell()
+            
+        else:
+            log.log_event(event.raw_line[:60], "dim")
+
+    @on(CO2PlotWidget.ProbeTypeChanged)
+    def handle_probe_change(self, event: CO2PlotWidget.ProbeTypeChanged) -> None:
+        """Handle probe type change detection."""
+        legend = self.query_one("#legend", ChannelLegend)
+        legend.set_probe_type(event.probe_type)
+        # Maybe show an unobtrusive indicator if needed, but the legend update is clear
+
+    @on(Message)
+    def handle_serial_error(self, event: Message) -> None:
+        """Handle serial errors - log only, no notification."""
+        if not isinstance(event, SerialError):
+            return
+        
+        # Log the error but don't show annoying notification
+        log = self.query_one("#log", LogWidget)
+        log.log_error(event.message)
+        
+        # If it's a device error, mark as disconnected
+        if "device" in event.message.lower() or "disconnected" in event.message.lower():
+            stats = self.query_one("#stats", StatsWidget)
+            stats.is_connected = False
+
+    def action_quit_app(self) -> None:
+        """Save work and quit the application."""
+        # Close serial connection
+        self.serial.disconnect()
+        
+        # Close log file
+        if self.raw_log_file:
+            try:
+                self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
+                self.raw_log_file.close()
+            except Exception:
+                pass
+        
+        # Auto-export if there's data
+        if self.recorded_data:
+            filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            try:
+                with open(filename, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Timestamp", "Raw_Data"])
+                    writer.writerows(self.recorded_data)
+            except Exception:
+                pass
+        
+        # Exit the app
+        self.app.exit()
+
+    def action_clear(self) -> None:
+        """Clear all data."""
+        self.query_one("#chart", CO2PlotWidget).clear_data()
+        self.query_one("#stats", StatsWidget).clear_history()
+        self.query_one("#log", LogWidget).clear()
+        self.notify("Data cleared", severity="information")
+
+    def action_pause(self) -> None:
+        """Toggle pause state."""
+        self.is_paused = not self.is_paused
+        stats = self.query_one("#stats", StatsWidget)
+        stats.is_paused = self.is_paused
+        
+        if self.is_paused:
+            self.notify("⏸ Data stream paused", severity="warning")
+        else:
+            self.notify("▶ Data stream resumed", severity="information")
+
+    def action_export(self) -> None:
+        """Export data to CSV."""
+        if not self.recorded_data:
+            self.notify("No data to export", severity="warning")
+            return
+        
+        filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        try:
+            with open(filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp", "Raw_Data"])
+                writer.writerows(self.recorded_data)
+            
+            self.notify(f"✓ Exported to {filename}", severity="information", timeout=5)
+            self.query_one("#log", LogWidget).log_success(f"Exported {len(self.recorded_data)} records to {filename}")
+        except Exception as e:
+            self.notify(f"Export failed: {e}", severity="error")
+
+    def action_big_mode(self) -> None:
+        """Toggle high-visibility field mode."""
+        stats = self.query_one("#stats", StatsWidget)
+        big_screen = BigModeScreen()
+        big_screen.current_co2 = stats.current_co2
+        big_screen.record_count = stats.record_count
+        # Store reference so we can update it
+        self._big_screen = big_screen
+        self.app.push_screen(big_screen)
+
+    # Channel selection actions (SRC mode: 8 channels)
+    def _select_channel(self, channel: str) -> None:
+        """Select a channel to display on the chart."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        legend = self.query_one("#legend", ChannelLegend)
+        chart.set_active_channel(channel)
+        legend.set_active(channel)
+
+    def action_select_cr(self) -> None:
+        self._select_channel("cr")
+
+    def action_select_hr(self) -> None:
+        self._select_channel("hr")
+
+    def action_select_par(self) -> None:
+        self._select_channel("par")
+
+    def action_select_rh(self) -> None:
+        self._select_channel("rh")
+
+    def action_select_temp(self) -> None:
+        self._select_channel("temp")
+
+    def action_select_dc(self) -> None:
+        self._select_channel("dc")
+
+    def action_select_sr(self) -> None:
+        self._select_channel("sr")
+
+    def action_select_atmp(self) -> None:
+        self._select_channel("atmp")
+
+    # Span control actions
+    def action_increase_span(self) -> None:
+        """Double the chart history span (max 600)."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        new_span = min(600, chart.max_points * 2)
+        if new_span != chart.max_points:
+            chart.max_points = new_span
+            self.notify(f"Span increased: {new_span} points")
+
+    def action_decrease_span(self) -> None:
+        """Halve the chart history span (min 30)."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        new_span = max(30, chart.max_points // 2)
+        if new_span != chart.max_points:
+            chart.max_points = new_span
+            self.notify(f"Span decreased: {new_span} points")
+
+
+# Custom message types
+@dataclass
+class DataReceived(Message):
+    """Message for received serial data."""
+    raw_line: str
+    parsed: dict
+
+
+@dataclass
+class SerialError(Message):
+    """Message for serial errors."""
+    message: str

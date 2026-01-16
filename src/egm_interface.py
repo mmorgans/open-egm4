@@ -141,25 +141,137 @@ class EGM4Serial:
                 # CO2 - primary value
                 data['co2_ppm'] = int(line[15:20])
                 
-                # Extended fields (if record is long enough)
+                if len(line) >= 61:
+                    # Probe type is last 2 chars (positions 58-60 in 0-indexed string, but string is 61 chars including type)
+                    # Example format: ...AP..PT..
+                    # R... (61 chars long usually)
+                    # Indices:
+                    # 54:58 = Pressure (AP)
+                    # 58:60 = Probe Type (PT)
+                    # 60 = likely ignored or part of PT if 2 chars?
+                    # The user says "last 2 digits". In a 61 char string, that's 59:61.
+                    # But Python slice [58:60] gets chars at 58 and 59.
+                    # Let's count back from end to be safe.
+                    try:
+                        data['probe_type'] = int(line[-2:])  # Last 2 chars
+                    except ValueError:
+                        data['probe_type'] = 0
+                
+                # Extended fields based on Probe Type
+                # Common fields first
                 if len(line) >= 25:
                     data['h2o_ref'] = int(line[20:25])
                 if len(line) >= 30:
                     data['rht'] = int(line[25:30])
-                if len(line) >= 34:
-                    data['mv1'] = int(line[30:34])
-                if len(line) >= 38:
-                    data['mv2'] = int(line[34:38])
-                if len(line) >= 42:
-                    data['mv3'] = int(line[38:42])
-                if len(line) >= 46:
-                    data['mv4'] = int(line[42:46])
-                if len(line) >= 50:
-                    data['mv5'] = int(line[46:50])
                 if len(line) >= 58:
                     data['pressure'] = int(line[54:58])
-                if len(line) >= 60:
-                    data['probe_type'] = int(line[58:60])
+
+                # Variable Data Area (Columns A-H)
+                # Rewritten based on precise analysis of screenlog.0:
+                # Type 8 (SRC-1) Layout (indices 0-based):
+                # A (30:34): PAR (4 chars)
+                # B (34:38): %RH (4 chars)
+                # C (38:42): Temp (4 chars) - implied decimal? manual "000.0" might just be format desc. assuming 4 digits.
+                # D (42:46): DC (4 chars)
+                # E (46:50): DT (4 chars)
+                # F (50:55): SR Rate (Magnitude) (5 chars) -> "00000" in log.
+                # G (55:59): ATMP (Pressure) (4 chars) -> "0965" in log.
+                # H (59): Sign of SR Rate (1 char) -> "0" in "08".
+                # PT (60): Probe Type (1 char) -> "8" in "08".
+                
+                # Check probe type first. 
+                # If we parsed `probe_type` from `line[-2:]`, it would be `08`.
+                # If parsed from `line[60]`, it would be `8`.
+                # Both indicate Type 8.
+                pt = data.get('probe_type', 0)
+                
+                if pt == 8 or pt == 80: # Just in case slicing was weird.
+                    # Verified Offsets via debug script on screenlog.0:
+                    # A: 30-34 (4 chars)
+                    # B: 34-39 (5 chars?) or shifted. Let's assume 34-39 covers it.
+                    # C: 39-43 (4 chars) -> "0051" -> 51 -> 5.1 C
+                    # D: 43-47 (4 chars) -> "0057" -> 57 DC
+                    # E: 47-51 (4 chars) -> "0082" -> 82 DT
+                    # F: 51-55 (4 chars) -> "0000" -> 00.00 SR Mag
+                    # G: 55-59 (4 chars) -> "0968" -> 968 ATMP
+                    # H: 59    (1 char)  -> "0"    -> + Sign
+                    # PT: 60   (1 char)  -> "8"    -> Type 8
+                    
+                    # A: PAR
+                    data['par'] = int(line[30:34]) if len(line) >= 34 else 0
+                    
+                    # B: %RH (Assuming 5 chars or shifted space?)
+                    # If C starts at 39, and A ends at 34... 34-39 is 5 chars.
+                    try:
+                        data['rh'] = int(line[34:39]) if len(line) >= 39 else 0
+                    except ValueError:
+                         data['rh'] = 0
+                    
+                    # C: Temp (4 chars: 39-43)
+                    # Data "0051" -> 51 -> 5.1? Or "0000" -> 0.0
+                    if len(line) >= 43:
+                         try:
+                             val = float(line[39:43])
+                             data['temp'] = val / 10.0
+                         except ValueError:
+                             data['temp'] = 0.0
+                    else:
+                        data['temp'] = 0.0
+                    
+                    # D: DC (4 chars: 43-47)
+                    if len(line) >= 47:
+                        try:
+                            data['dc'] = int(line[43:47])
+                        except ValueError:
+                            data['dc'] = 0
+                    
+                    # E: DT (4 chars: 47-51)
+                    if len(line) >= 51:
+                         try:
+                             data['dt'] = int(line[47:51])
+                         except ValueError:
+                             data['dt'] = 0
+                    
+                    # F: SR Rate Magnitude (4 chars: 51-55)
+                    sr_mag = 0.0
+                    if len(line) >= 55:
+                        try:
+                            sr_mag = float(line[51:55]) / 100.0 # "0000" -> 0.00
+                        except ValueError:
+                            pass
+                            
+                    # G: ATMP (4 chars: 55-59)
+                    if len(line) >= 59:
+                         try:
+                             data['atmp'] = int(line[55:59])
+                             data['pressure'] = data['atmp']
+                         except ValueError:
+                             pass
+
+                    # H: Sign (1 char: 59)
+                    sr_sign = 1
+                    if len(line) > 59:
+                        sign_char = line[59]
+                        if sign_char == '1': # 1 = -
+                             sr_sign = -1
+                        # 0 = + (default)
+                    
+                    data['sr'] = sr_mag * sr_sign
+                
+                else:
+                    # Generic mapping (Type 0 / IRGA)
+                    # A-E to mV1-5
+                    if len(line) >= 34: data['mv1'] = int(line[30:34])
+                    if len(line) >= 38: data['mv2'] = int(line[34:38])
+                    if len(line) >= 42: data['mv3'] = int(line[38:42]) 
+                    if len(line) >= 46: data['mv4'] = int(line[42:46])
+                    if len(line) >= 50: data['mv5'] = int(line[46:50])
+                    # Pressure usually at 54:58 for generic
+                    if len(line) >= 58: 
+                         data['pressure'] = int(line[54:58])
+                         data['atmp'] = data['pressure']
+
+
                 
                 # Calculate timestamp from device time
                 from datetime import datetime

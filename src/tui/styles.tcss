@@ -1,0 +1,98 @@
+/* Open EGM-4 TUI Styles */
+
+/* Global */
+Screen {
+    background: $surface;
+}
+
+Header {
+    dock: top;
+}
+
+Footer {
+    dock: bottom;
+}
+
+/* Connect Screen */
+ConnectScreen {
+    align: center middle;
+}
+
+ConnectScreen #logo {
+    text-align: center;
+    color: $primary;
+    margin-bottom: 1;
+}
+
+ConnectScreen #port-list {
+    width: 70;
+    height: auto;
+    max-height: 12;
+    margin: 1 0;
+    border: solid $primary;
+}
+
+ConnectScreen #connect-container {
+    width: 70;
+    height: auto;
+    align: center middle;
+}
+
+ConnectScreen #connect-btn {
+    margin-top: 1;
+    width: 100%;
+}
+
+ConnectScreen #scan-btn {
+    margin-top: 1;
+    width: 100%;
+}
+
+ConnectScreen #status {
+    margin-top: 2;
+    text-align: center;
+    color: $text-muted;
+}
+
+/* Monitor Screen */
+MonitorScreen {
+    layout: grid;
+    grid-size: 2 2;
+    grid-columns: 2fr 1fr;
+    grid-rows: 2fr 1fr;
+    padding: 0;
+}
+
+MonitorScreen #chart {
+    column-span: 1;
+    row-span: 1;
+    margin: 1;
+    border: solid $success;
+}
+
+MonitorScreen #stats {
+    column-span: 1;
+    row-span: 1;
+    margin: 1;
+}
+
+MonitorScreen #log {
+    column-span: 2;
+    row-span: 1;
+    margin: 1;
+    border: solid $primary;
+}
+
+/* Widgets */
+CO2PlotWidget {
+    height: 100%;
+}
+
+StatsWidget {
+    height: 100%;
+}
+
+LogWidget {
+    height: 100%;
+    scrollbar-gutter: stable;
+}
