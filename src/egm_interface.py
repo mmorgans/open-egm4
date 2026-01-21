@@ -125,10 +125,15 @@ class EGM4Serial:
                             self.data_callback(record, parsed)
                             
             except Exception as e:
-                logging.error(f"Loop error: {e}")
-                if self.error_callback:
-                    self.error_callback(str(e))
-                await asyncio.sleep(1)
+                # Only log/sleep if we're still running (not shutting down)
+                if self.running:
+                    logging.error(f"Loop error: {e}")
+                    if self.error_callback:
+                        self.error_callback(str(e))
+                    await asyncio.sleep(0.5)
+                else:
+                    # Shutting down - exit immediately
+                    break
 
     # _parse_data method is identical to previous implementation, 
     # but pasted here to complete the class replacement

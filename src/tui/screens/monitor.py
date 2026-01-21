@@ -310,6 +310,16 @@ class MonitorScreen(Screen):
 
     async def action_quit_app(self) -> None:
         """Save work and quit the application."""
+        # Immediate feedback that we're quitting
+        log = self.query_one("#log", LogWidget)
+        log.log_info("Saving and quitting...")
+        stats = self.query_one("#stats", StatsWidget)
+        stats.device_status = "QUITTING..."
+        
+        # Clear callbacks to prevent error messages during shutdown
+        self.serial.error_callback = None
+        self.serial.data_callback = None
+        
         # Close serial connection
         await self.serial.disconnect()
         
@@ -340,7 +350,10 @@ class MonitorScreen(Screen):
         self.query_one("#chart", CO2PlotWidget).clear_data()
         self.query_one("#stats", StatsWidget).clear_history()
         self.query_one("#log", LogWidget).clear()
-        self.notify("Data cleared", severity="information")
+        # Update legend to reflect cleared plots
+        legend = self.query_one("#legend", ChannelLegend)
+        chart = self.query_one("#chart", CO2PlotWidget)
+        legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
 
     def action_pause(self) -> None:
         """Toggle pause state."""

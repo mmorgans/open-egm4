@@ -252,9 +252,9 @@ class CO2PlotWidget(PlotextPlot):
             self.plt.ylim(plot_min, plot_max)
             
             current = y_values[-1]
-            title = f"{short_name}: {current:.1f} {unit}  |  {plot_label}  Span:{self._max_points}"
+            title = f"{short_name} ({full_name}, {unit}): {current:.1f}  |  {plot_label}  Span:{self._max_points}"
         else:
-            title = f"{short_name} ({full_name})  |  {plot_label}  Waiting..."
+            title = f"{short_name} ({full_name}, {unit})  |  {plot_label}  Waiting for data..."
             self.plt.ylim(typical_min, typical_max)
         
         self.plt.title(title)
