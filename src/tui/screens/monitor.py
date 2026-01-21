@@ -18,6 +18,8 @@ from src.tui.widgets.log import LogWidget
 from src.tui.widgets.legend import ChannelLegend
 from src.egm_interface import EGM4Serial
 from src.tui.screens.bigmode import BigModeScreen
+from src.tui.screens.help import HelpScreen
+
 
 class MonitorScreen(Screen):
     """Main monitoring dashboard screen."""
@@ -32,26 +34,32 @@ class MonitorScreen(Screen):
 
     BINDINGS = [
         ("q", "quit_app", "Quit"),
-        ("c", "clear", "Clear Data"),
-        ("e", "export", "Export CSV"),
-        ("p", "pause", "Pause/Resume"),
-        ("b", "big_mode", "Field Mode"),
-        ("d", "app.toggle_dark", "Dark/Light"),
-        # Channel selection (SRC mode: 8 channels)
-        ("1", "select_cr", "Cr"),
-        ("2", "select_hr", "Hr"),
-        ("3", "select_par", "PAR"),
-        ("4", "select_rh", "%RH"),
-        ("5", "select_temp", "Temp"),
-        ("6", "select_dc", "DC"),
-        ("7", "select_sr", "SR"),
-        ("8", "select_atmp", "ATMP"),
-        ("9", "select_dt", "DT"),
-        # Span control
-        ("=", "increase_span", "+ Span"),
+        ("c", "clear", "Clear"),
+        ("e", "export", "Export"),
+        ("p", "pause", "Pause"),
+        ("b", "big_mode", "Big"),
+        ("d", "app.toggle_dark", "Theme"),
+        # Channel selection - hidden from footer (shown in legend)
+        ("1", "select_cr", None),
+        ("2", "select_hr", None),
+        ("3", "select_par", None),
+        ("4", "select_rh", None),
+        ("5", "select_temp", None),
+        ("6", "select_dc", None),
+        ("7", "select_sr", None),
+        ("8", "select_atmp", None),
+        ("9", "select_dt", None),
+        # Span control - hidden from footer (shown in legend)
+        ("=", "increase_span", None),
         ("+", "increase_span", None),
-        ("-", "decrease_span", "- Span"),
+        ("-", "decrease_span", None),
         ("_", "decrease_span", None),
+        # Plot cycling - hidden from footer
+        ("comma", "prev_plot", None),
+        ("full_stop", "next_plot", None),
+        ("less_than_sign", "prev_plot", None),
+        ("greater_than_sign", "next_plot", None),
+        ("?", "help", "Help"),
     ]
 
     @dataclass
@@ -70,18 +78,20 @@ class MonitorScreen(Screen):
         self.port = port
         self.serial = EGM4Serial()
         self.is_paused = False
-        self.recorded_data: list[tuple[str, str]] = []
+        self.recorded_data: list[dict] = []
         self.raw_log_file = None
 
     def compose(self) -> ComposeResult:
         yield Header()
-        with Horizontal(id="main-container"):
-            with Vertical(id="left-panel"):
+        with Horizontal(id="main"):
+            with Vertical(id="left"):
                 yield CO2PlotWidget(id="chart")
                 yield ChannelLegend(id="legend")
-            with Vertical(id="right-panel"):
+            with Vertical(id="right"):
                 yield StatsWidget(id="stats")
-                yield LogWidget(id="log")
+                log_widget = LogWidget(id="log")
+                log_widget.border_title = "Event Log"
+                yield log_widget
         yield Footer()
 
     def on_mount(self) -> None:
@@ -192,17 +202,46 @@ class MonitorScreen(Screen):
         log = self.query_one("#log", LogWidget)
         
         timestamp = datetime.datetime.now().isoformat()
-        self.recorded_data.append((timestamp, event.raw_line))
         
-        if rec_type == 'R':
+        if rec_type in ('R', 'M'):
             co2 = parsed.get('co2_ppm', 0)
             record = parsed.get('record', 0)
             plot = parsed.get('plot', 0)
             
+            # Store parsed data for CSV export (all fields from manual)
+            export_row = {
+                'timestamp': timestamp,
+                'type': rec_type,
+                'plot': plot,
+                'record': record,
+                'day': parsed.get('day', 0),
+                'month': parsed.get('month', 0),
+                'hour': parsed.get('hour', 0),
+                'minute': parsed.get('minute', 0),
+                'co2_ppm': co2,
+                'h2o_mb': parsed.get('h2o', 0),
+                'rht_c': parsed.get('rht', 0),
+                'par': parsed.get('par', ''),
+                'rh_pct': parsed.get('rh', ''),
+                'temp_c': parsed.get('temp', ''),
+                'dc_ppm': parsed.get('dc', ''),
+                'dt_s': parsed.get('dt', ''),
+                'sr_rate': parsed.get('sr', ''),
+                'atmp_mb': parsed.get('atmp', ''),
+                'probe_type': parsed.get('probe_type', ''),
+            }
+            self.recorded_data.append(export_row)
+            
             chart.add_data(parsed)
             stats.add_reading(co2)
             stats.record_count += 1
+            stats.data_mode = rec_type  # Update mode indicator (M=Real-Time, R=Memory)
+            stats.device_status = ""  # Clear warmup/zero status when data arrives
             log.log_data(plot, record, co2)
+            
+            # Update legend with current plot info
+            legend = self.query_one("#legend", ChannelLegend)
+            legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
             
             # Update big mode screen if it's active
             if hasattr(self, '_big_screen') and self._big_screen.is_current:
@@ -222,11 +261,25 @@ class MonitorScreen(Screen):
             
         elif rec_type == 'B':
             co2 = parsed.get('co2_ppm', 0)
-            log.log_info(f"Device startup: EGM4, CO₂: {co2:.1f}")
+            log.log_info(f"Device startup: EGM4, CO2: {co2:.1f}")
+            
+        elif rec_type == 'W':
+            # Warmup - device heating up
+            temp = parsed.get('warmup_temp', 0)
+            stats.device_status = f"WARMUP: {temp:.0f}C"
+            stats.data_mode = ""  # Clear data mode during warmup
             
         elif rec_type == 'Z':
+            # Zero check in progress
+            countdown = parsed.get('zero_countdown', 0)
+            stats.device_status = f"ZERO CHECK: {countdown:.0f}/14s"
+            stats.data_mode = ""  # Clear data mode during zero check
+            
+        elif rec_type == 'Z_END':
+            # End of memory dump (plain "Z" without value)
             log.log_complete()
             self.notify("Download Complete!", severity="information", timeout=5)
+            stats.device_status = ""  # Clear status
             # Audible beep
             self.app.bell()
             
@@ -301,17 +354,40 @@ class MonitorScreen(Screen):
             self.notify("▶ Data stream resumed", severity="information")
 
     def action_export(self) -> None:
-        """Export data to CSV."""
+        """Export data to CSV with proper headers matching EGM-4 manual."""
         if not self.recorded_data:
             self.notify("No data to export", severity="warning")
             return
         
         filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         
+        # Headers matching EGM-4 manual record structure
+        headers = [
+            'timestamp',      # Local timestamp when received
+            'type',           # M=Real Time, R=Memory
+            'plot',           # Plot No (0-99)
+            'record',         # Record No (1-9999)
+            'day',            # Day (1-31)
+            'month',          # Month (1-12)
+            'hour',           # Hour (1-24)
+            'minute',         # Minute (0-59)
+            'co2_ppm',        # CO2 Ref (ppm)
+            'h2o_mb',         # H2O Ref (mb)
+            'rht_c',          # RH Sensor Temp (°C)
+            'par',            # PAR (µmol m⁻² s⁻¹) - SRC-1
+            'rh_pct',         # %RH - SRC-1
+            'temp_c',         # Soil Temp (°C) - SRC-1
+            'dc_ppm',         # Delta CO2 (ppm) - SRC-1
+            'dt_s',           # Delta Time (s) - SRC-1
+            'sr_rate',        # Soil Resp Rate (g CO2/m²/hr) - SRC-1
+            'atmp_mb',        # Atmospheric Pressure (mb)
+            'probe_type',     # Probe Type code
+        ]
+        
         try:
             with open(filename, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(["Timestamp", "Raw_Data"])
+                writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+                writer.writeheader()
                 writer.writerows(self.recorded_data)
             
             self.notify(f"✓ Exported to {filename}", severity="information", timeout=5)
@@ -371,7 +447,6 @@ class MonitorScreen(Screen):
         new_span = min(600, chart.max_points * 2)
         if new_span != chart.max_points:
             chart.max_points = new_span
-            self.notify(f"Span increased: {new_span} points")
 
     def action_decrease_span(self) -> None:
         """Halve the chart history span (min 30)."""
@@ -379,7 +454,24 @@ class MonitorScreen(Screen):
         new_span = max(30, chart.max_points // 2)
         if new_span != chart.max_points:
             chart.max_points = new_span
-            self.notify(f"Span decreased: {new_span} points")
+
+    def action_help(self) -> None:
+        """Show the help screen."""
+        self.app.push_screen(HelpScreen())
+
+    def action_next_plot(self) -> None:
+        """Switch to next plot."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        legend = self.query_one("#legend", ChannelLegend)
+        chart.next_plot()
+        legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
+
+    def action_prev_plot(self) -> None:
+        """Switch to previous plot."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        legend = self.query_one("#legend", ChannelLegend)
+        chart.prev_plot()
+        legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
 
 
 # Custom message types

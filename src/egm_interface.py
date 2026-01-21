@@ -44,11 +44,10 @@ class DesktopSerialTransport:
         self._serial = serial.Serial(
             port=port,
             baudrate=9600,
-            original_baudrate=9600, # pyserial-specific sometimes needed
             bytesize=serial.EIGHTBITS,
             parity=serial.PARITY_NONE,
             stopbits=serial.STOPBITS_TWO,
-            timeout=0.1 # Non-blocking read preferred
+            timeout=0.1  # Non-blocking read
         )
 
     async def disconnect(self) -> None:
@@ -134,11 +133,38 @@ class EGM4Serial:
     # _parse_data method is identical to previous implementation, 
     # but pasted here to complete the class replacement
     def _parse_data(self, line: str) -> dict:
-        """Parses a raw line from the EGM-4."""
+        """
+        Parses a raw line from the EGM-4.
+        
+        Record Structure (60+ digits, no spaces):
+        Pos 0:     M/R (M=Real Time, R=Memory)
+        Pos 1-2:   Plot No (0-99)
+        Pos 3-6:   Rec No (1-9999)
+        Pos 7-8:   Day (1-31)
+        Pos 9-10:  Month (1-12)
+        Pos 11-12: Hour (1-24)
+        Pos 13-14: Minutes (0-59)
+        Pos 15-19: CO2 Ref (ppm, 5 chars)
+        Pos 20-24: H2O Ref (mb, 5 chars, 0 if no sensor)
+        Pos 25-29: RHT (RH sensor temp, 000.0 format)
+        Pos 30-33: A (probe-specific)
+        Pos 34-37: B (probe-specific)
+        Pos 38-41: C (probe-specific)
+        Pos 42-45: D (probe-specific)
+        Pos 46-49: E (probe-specific)
+        Pos 50-53: F (probe-specific)
+        Pos 54-55: G (probe-specific)
+        Pos 56-57: H (probe-specific)
+        Pos 58-60: AP (Atmospheric Pressure, mb)
+        Pos 61-62: PT (Probe Type)
+        """
         data = {}
         try:
-            if len(line) >= 20 and line[0] == 'R':
+            # Check for valid R or M record
+            if len(line) >= 20 and line[0] in ('R', 'M'):
                 data['type'] = line[0]
+                
+                # Core fields (always present)
                 data['plot'] = int(line[1:3])
                 data['record'] = int(line[3:7])
                 data['day'] = int(line[7:9])
@@ -147,79 +173,190 @@ class EGM4Serial:
                 data['minute'] = int(line[13:15])
                 data['co2_ppm'] = int(line[15:20])
                 
+                # H2O Ref (pos 20-24)
+                if len(line) >= 25:
+                    try:
+                        data['h2o'] = int(line[20:25])
+                    except ValueError:
+                        data['h2o'] = 0
+                
+                # RHT - RH sensor temperature (pos 25-29, format 000.0)
+                if len(line) >= 30:
+                    try:
+                        data['rht'] = float(line[25:30]) / 10.0
+                    except ValueError:
+                        data['rht'] = 0.0
+                
+                # Get probe type from end of record (last 2 chars)
+                probe_type = 0
+                if len(line) >= 62:
+                    try:
+                        probe_type = int(line[60:62])
+                    except ValueError:
+                        # Try last 2 chars if 60:62 fails
+                        try:
+                            probe_type = int(line[-2:])
+                        except:
+                            probe_type = 0
+                data['probe_type'] = probe_type
+                
+                # Parse probe-specific fields A-H (pos 30-57)
+                # A: 30-33, B: 34-37, C: 38-41, D: 42-45
+                # E: 46-49, F: 50-53, G: 54-55, H: 56-57
+                
+                if probe_type == 8:
+                    # SRC-1 Soil Respiration Chamber
+                    # A: PAR (4 chars)
+                    if len(line) >= 34:
+                        try:
+                            data['par'] = int(line[30:34])
+                        except:
+                            data['par'] = 0
+                    
+                    # B: %RH (4 chars)
+                    if len(line) >= 38:
+                        try:
+                            data['rh'] = int(line[34:38])
+                        except:
+                            data['rh'] = 0
+                    
+                    # C: Temp (4 chars, format 000.0 -> divide by 10)
+                    if len(line) >= 42:
+                        try:
+                            data['temp'] = float(line[38:42]) / 10.0
+                        except:
+                            data['temp'] = 0.0
+                    
+                    # D: DC - Delta CO2 (4 chars)
+                    if len(line) >= 46:
+                        try:
+                            data['dc'] = int(line[42:46])
+                        except:
+                            data['dc'] = 0
+                    
+                    # E: DT - Delta Time (4 chars)
+                    if len(line) >= 50:
+                        try:
+                            data['dt'] = int(line[46:50])
+                        except:
+                            data['dt'] = 0
+                    
+                    # F: SR Rate (4 chars, format 00.00 -> divide by 100)
+                    if len(line) >= 54:
+                        try:
+                            sr_magnitude = float(line[50:54]) / 100.0
+                        except:
+                            sr_magnitude = 0.0
+                        
+                        # H: +/- SR sign (pos 56-57, 00=positive, 01=negative)
+                        sr_sign = 1
+                        if len(line) >= 58:
+                            try:
+                                if line[56:58] == '01':
+                                    sr_sign = -1
+                            except:
+                                pass
+                        data['sr'] = sr_magnitude * sr_sign
+                    
+                    # G: empty for SRC-1
+                    
+                elif probe_type == 0:
+                    # No sensor - IRGA standalone (raw mV values)
+                    if len(line) >= 34:
+                        try:
+                            data['mv_pin1'] = int(line[30:34])
+                        except:
+                            data['mv_pin1'] = 0
+                    if len(line) >= 38:
+                        try:
+                            data['mv_pin2'] = int(line[34:38])
+                        except:
+                            data['mv_pin2'] = 0
+                    if len(line) >= 42:
+                        try:
+                            data['mv_pin3'] = int(line[38:42])
+                        except:
+                            data['mv_pin3'] = 0
+                    if len(line) >= 46:
+                        try:
+                            data['mv_pin4'] = int(line[42:46])
+                        except:
+                            data['mv_pin4'] = 0
+                    if len(line) >= 50:
+                        try:
+                            data['mv_pin5'] = int(line[46:50])
+                        except:
+                            data['mv_pin5'] = 0
+                
+                # AP: Atmospheric Pressure (pos 58-60, 3 chars, in mb)
                 if len(line) >= 61:
                     try:
-                        data['probe_type'] = int(line[-2:])
-                    except ValueError:
-                        data['probe_type'] = 0
+                        data['atmp'] = int(line[58:61])
+                    except:
+                        data['atmp'] = 0
                 
-                # Basic/Extended fields
-                if len(line) >= 25: data['h2o_ref'] = int(line[20:25])
-                if len(line) >= 30: data['rht'] = int(line[25:30])
-                if len(line) >= 58: data['pressure'] = int(line[54:58])
-
-                # Probe 8 Logic
-                pt = data.get('probe_type', 0)
-                if pt == 8 or pt == 80:
-                    data['par'] = int(line[30:34]) if len(line) >= 34 else 0
-                    try: data['rh'] = int(line[34:39]) if len(line) >= 39 else 0
-                    except: data['rh'] = 0
-                    
-                    if len(line) >= 43:
-                         try: data['temp'] = float(line[39:43]) / 10.0
-                         except: data['temp'] = 0
-                    
-                    if len(line) >= 47:  
-                        try: data['dc'] = int(line[43:47])
-                        except: data['dc'] = 0
-                    if len(line) >= 51:
-                         try: data['dt'] = int(line[47:51])
-                         except: data['dt'] = 0
-                    
-                    if len(line) >= 55:
-                        try: sr_mag = float(line[51:55]) / 100.0
-                        except: sr_mag = 0
-                        sr_sign = -1 if len(line)>59 and line[59]=='1' else 1
-                        data['sr'] = sr_mag * sr_sign
-                        
-                    if len(line) >= 59:
-                         try: 
-                             data['atmp'] = int(line[55:59])
-                             data['pressure'] = data['atmp']
-                         except: pass
-
-                else:
-                    if len(line) >= 34: data['mv1'] = int(line[30:34])
-                    if len(line) >= 38: data['mv2'] = int(line[34:38])
-                    if len(line) >= 42: data['mv3'] = int(line[38:42]) 
-                    if len(line) >= 46: data['mv4'] = int(line[42:46])
-                    if len(line) >= 50: data['mv5'] = int(line[46:50])
-                
-                # Timestamp
+                # Device timestamp
                 from datetime import datetime
                 try:
                     data['device_timestamp'] = datetime(
                         year=datetime.now().year,
-                        month=data['month'], day=data['day'],
-                        hour=data['hour'], minute=data['minute']
+                        month=data['month'],
+                        day=data['day'],
+                        hour=data['hour'],
+                        minute=data['minute']
                     )
-                except: data['device_timestamp'] = None
-
+                except:
+                    data['device_timestamp'] = None
+            
             elif len(line) > 0 and line[0] == 'B':
+                # B-type record (alternate format)
                 data['type'] = 'B'
                 parts = line.split(',')
                 if len(parts) >= 3:
-                    try: data['co2_ppm'] = float(parts[2])
-                    except: pass
+                    try:
+                        data['co2_ppm'] = float(parts[2])
+                    except:
+                        pass
+            
+            elif len(line) > 0 and line[0] == 'W':
+                # Warmup record: W,+NN (temperature in Celsius)
+                # EGM is warming up, ready when temp reaches ~55C
+                data['type'] = 'W'
+                if ',' in line:
+                    parts = line.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            # Parse temperature value (e.g., "+54" -> 54)
+                            temp_str = parts[1].replace('+', '').strip()
+                            data['warmup_temp'] = float(temp_str)
+                        except ValueError:
+                            data['warmup_temp'] = 0
+            
             elif len(line) > 0 and line[0] == 'Z':
-                data['type'] = 'Z'
+                # Zero check record
+                if ',' in line:
+                    # Z,+N.N format - zero checking in progress (counts 0-14 seconds)
+                    data['type'] = 'Z'
+                    parts = line.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            # Parse countdown value (e.g., "+10" or "+1.0" -> 10 or 1)
+                            count_str = parts[1].replace('+', '').strip()
+                            data['zero_countdown'] = float(count_str)
+                        except ValueError:
+                            data['zero_countdown'] = 0
+                else:
+                    # Plain "Z" - end of memory dump (not zero checking)
+                    data['type'] = 'Z_END'
+            
             else:
                 data['type'] = 'unknown'
                 data['raw'] = line
+                
         except Exception as e:
             data['error'] = str(e)
             data['raw'] = line
-            
+        
         return data
 
 async def get_serial_ports():

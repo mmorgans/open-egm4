@@ -1,0 +1,40 @@
+[project]
+name = "open-egm4"
+version = "1.0.0"
+description = "Terminal User Interface for the PP Systems EGM-4 Environmental Gas Monitor"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["egm4", "co2", "soil respiration", "tui", "serial"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "textual>=0.40.0",
+    "textual-plotext>=0.2.0",
+    "pyserial>=3.5",
+]
+
+[project.scripts]
+open-egm4 = "src.tui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/mmorgans/open-egm4"
+Repository = "https://github.com/mmorgans/open-egm4"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]

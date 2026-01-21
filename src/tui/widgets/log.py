@@ -7,13 +7,6 @@ from textual.widgets import RichLog
 class LogWidget(RichLog):
     """A scrollable log widget for displaying serial data events."""
 
-    DEFAULT_CSS = """
-    LogWidget {
-        height: 100%;
-        border: solid $primary;
-    }
-    """
-
     def __init__(
         self,
         *,

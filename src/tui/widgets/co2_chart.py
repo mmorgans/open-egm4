@@ -64,23 +64,98 @@ class CO2PlotWidget(PlotextPlot):
         self._probe_type = probe_type
         self._channels_config = CHANNELS_SRC if probe_type == "SRC" else CHANNELS_IRGA
         
-        # Data storage for all possible channels
-        # FIXED CAPACITY: Store up to 3600 points (buffer) regardless of view span
-        # This allows non-destructive zooming.
+        # Data storage: per-plot, per-channel
+        # Structure: _plot_data[plot_num][channel_key] = deque
         self._buffer_size = 3600
-        self._channels: dict[str, deque] = {
-            ch: deque(maxlen=self._buffer_size) for ch in CHANNELS_SRC  # Use full set
-        }
+        self._plot_data: dict[int, dict[str, deque]] = {}
+        
+        # Track all plots seen
+        self._known_plots: set[int] = set()
+        
+        # Filter: which plot to display (None = all plots combined)
+        self._filter_plot: int | None = None
         
         # Active channel (what's currently displayed)
         self._active_channel: str = DEFAULT_CHANNEL
         
-        # Current plot number and DT for reference
+        # Current plot number from latest data
         self._current_plot: int = 0
         self._current_dt: int = 0
         
         # Watch for theme changes
         self.watch(self.app, "theme", lambda: self.call_after_refresh(self.replot))
+
+    def _get_plot_channels(self, plot_num: int) -> dict[str, deque]:
+        """Get or create channel storage for a specific plot."""
+        if plot_num not in self._plot_data:
+            self._plot_data[plot_num] = {
+                ch: deque(maxlen=self._buffer_size) for ch in CHANNELS_SRC
+            }
+            self._known_plots.add(plot_num)
+        return self._plot_data[plot_num]
+
+    @property
+    def filter_plot(self) -> int | None:
+        """Get current plot filter (None = show all)."""
+        return self._filter_plot
+
+    @filter_plot.setter
+    def filter_plot(self, value: int | None) -> None:
+        """Set plot filter and refresh."""
+        self._filter_plot = value
+        self.replot()
+
+    def get_known_plots(self) -> list[int]:
+        """Get sorted list of all plot numbers seen."""
+        return sorted(self._known_plots)
+
+    def next_plot(self) -> int | None:
+        """Switch to next plot in sequence. Returns new plot number."""
+        plots = self.get_known_plots()
+        if not plots:
+            return None
+        
+        if self._filter_plot is None:
+            # Currently showing all - switch to first plot
+            self._filter_plot = plots[0]
+        else:
+            # Find next plot
+            try:
+                idx = plots.index(self._filter_plot)
+                if idx + 1 < len(plots):
+                    self._filter_plot = plots[idx + 1]
+                else:
+                    # Wrap to "all"
+                    self._filter_plot = None
+            except ValueError:
+                self._filter_plot = plots[0]
+        
+        self.replot()
+        return self._filter_plot
+
+    def prev_plot(self) -> int | None:
+        """Switch to previous plot in sequence. Returns new plot number."""
+        plots = self.get_known_plots()
+        if not plots:
+            return None
+        
+        if self._filter_plot is None:
+            # Currently showing all - switch to last plot
+            self._filter_plot = plots[-1]
+        else:
+            # Find previous plot
+            try:
+                idx = plots.index(self._filter_plot)
+                if idx > 0:
+                    self._filter_plot = plots[idx - 1]
+                else:
+                    # Wrap to "all"
+                    self._filter_plot = None
+            except ValueError:
+                self._filter_plot = plots[-1]
+        
+        self.replot()
+        return self._filter_plot
 
     @property
     def channels_config(self) -> dict:
@@ -123,15 +198,28 @@ class CO2PlotWidget(PlotextPlot):
         
         key, short_name, full_name, unit, color, (typical_min, typical_max) = self._channels_config[ch]
         
-        # Get data from storage
-        full_data = list(self._channels[ch])
+        # Gather data based on filter setting
+        full_data = []
+        if self._filter_plot is not None:
+            # Show only specific plot
+            if self._filter_plot in self._plot_data:
+                full_data = list(self._plot_data[self._filter_plot].get(ch, []))
+        else:
+            # Show all plots combined (in order received per plot)
+            for plot_num in sorted(self._plot_data.keys()):
+                full_data.extend(self._plot_data[plot_num].get(ch, []))
         
         # Slice for display based on max_points (span)
-        # Show only the last N points
         if len(full_data) > self._max_points:
             data = full_data[-self._max_points:]
         else:
             data = full_data
+        
+        # Build plot filter label for title
+        if self._filter_plot is not None:
+            plot_label = f"Plot:{self._filter_plot}"
+        else:
+            plot_label = "Plot:ALL"
         
         if len(data) >= 2:
             y_values = data
@@ -145,7 +233,6 @@ class CO2PlotWidget(PlotextPlot):
             data_span = data_max - data_min
             
             # Determine minimum allowed span (e.g., 5% of typical range)
-            # This prevents zooming in too effectively on noise
             typical_span = abs(typical_max - typical_min)
             min_span = typical_span * 0.05
             if min_span == 0: min_span = 1.0
@@ -165,9 +252,9 @@ class CO2PlotWidget(PlotextPlot):
             self.plt.ylim(plot_min, plot_max)
             
             current = y_values[-1]
-            title = f"{short_name}: {current:.1f} {unit}  |  Plot:{self._current_plot}  Span:{self._max_points}"
+            title = f"{short_name}: {current:.1f} {unit}  |  {plot_label}  Span:{self._max_points}"
         else:
-            title = f"{short_name} ({full_name})  |  Waiting for data..."
+            title = f"{short_name} ({full_name})  |  {plot_label}  Waiting..."
             self.plt.ylim(typical_min, typical_max)
         
         self.plt.title(title)
@@ -182,9 +269,9 @@ class CO2PlotWidget(PlotextPlot):
         Args:
             parsed_data: Dictionary from EGM4Serial parser.
         """
-        # Track plot number
-        if 'plot' in parsed_data:
-            self._current_plot = parsed_data['plot']
+        # Get plot number (default to 0 if not present)
+        plot_num = parsed_data.get('plot', 0)
+        self._current_plot = plot_num
         
         # Track DT
         if 'dt' in parsed_data:
@@ -202,49 +289,57 @@ class CO2PlotWidget(PlotextPlot):
                 # Notify app of probe change
                 self.post_message(self.ProbeTypeChanged(new_type))
 
-        # Add data to channels
+        # Get channel storage for this plot
+        plot_channels = self._get_plot_channels(plot_num)
+        
         # Map output keys from parser to internal channel keys
         field_map = {
             'co2_ppm': 'cr',
-            'h2o_ref': 'hr',
+            'h2o': 'hr',
             'par': 'par',
             'rh': 'rh',
             'temp': 'temp',
             'dc': 'dc',
             'sr': 'sr',
             'atmp': 'atmp',
-            'dt': 'dt', # Map dt if we decide to plot it
+            'dt': 'dt',
         }
         
         for p_key, ch_key in field_map.items():
             if p_key in parsed_data:
                 val = parsed_data[p_key]
-                # Add to main channel deque if it exists
-                if ch_key in self._channels:
+                if ch_key in plot_channels:
                     try:
-                        self._channels[ch_key].append(float(val))
+                        plot_channels[ch_key].append(float(val))
                     except (ValueError, TypeError):
                         pass
         
         self.replot()
 
     def get_current_value(self, channel: str = None) -> float | None:
-        """Get the latest value for a channel."""
+        """Get the latest value for a channel from current plot."""
         ch = channel or self._active_channel
-        if ch in self._channels and self._channels[ch]:
-            return self._channels[ch][-1]
+        if self._current_plot in self._plot_data:
+            plot_channels = self._plot_data[self._current_plot]
+            if ch in plot_channels and plot_channels[ch]:
+                return plot_channels[ch][-1]
         return None
 
     def clear_data(self) -> None:
         """Clear all chart data."""
-        for ch in self._channels:
-            self._channels[ch].clear()
+        self._plot_data.clear()
+        self._known_plots.clear()
+        self._filter_plot = None
         self.replot()
 
     @property
     def data(self) -> dict[str, list[float]]:
-        """Get all channel data as a dictionary."""
-        return {ch: list(data) for ch, data in self._channels.items()}
+        """Get all channel data as a dictionary (aggregated from all plots)."""
+        result = {ch: [] for ch in CHANNELS_SRC}
+        for plot_num in sorted(self._plot_data.keys()):
+            for ch, values in self._plot_data[plot_num].items():
+                result[ch].extend(list(values))
+        return result
 
     def _watch_marker(self) -> None:
         """React to marker type being changed."""

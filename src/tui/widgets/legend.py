@@ -71,6 +71,12 @@ class ChannelLegend(Widget):
             self._active = channel
             self.refresh()
 
+    def set_plot_info(self, current_plot: int | None, known_plots: list[int]) -> None:
+        """Update plot filter display info."""
+        self._current_plot = current_plot
+        self._known_plots = known_plots
+        self.refresh()
+
     def render(self) -> RenderableType:
         """Render the legend bar."""
         text = Text()
@@ -88,7 +94,22 @@ class ChannelLegend(Widget):
                 text.append(f"[{key}]", style="dim")
                 text.append(name, style="dim")
         
-        # Add span hint
-        text.append("  |  =/- Span", style="dim")
+        # Span control hint
+        text.append("  |  +/- Span", style="dim")
+        
+        # Plot selector hint
+        text.append("  |  </>", style="dim")
+        if hasattr(self, '_current_plot') and hasattr(self, '_known_plots'):
+            if self._current_plot is None:
+                text.append(" ALL", style="bold cyan")
+            else:
+                text.append(f" P{self._current_plot}", style="bold yellow")
+            
+            # Show available plots
+            if self._known_plots:
+                plots_str = ",".join(str(p) for p in self._known_plots[:5])  # Max 5
+                if len(self._known_plots) > 5:
+                    plots_str += "..."
+                text.append(f" ({plots_str})", style="dim")
         
         return text
