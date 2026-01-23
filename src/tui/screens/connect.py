@@ -13,7 +13,7 @@ from serial.tools import list_ports
 
 
 # ASCII art logo
-LOGO = """
+LOGO = r"""
                                                     _  _   
    ___  _ __   ___ _ __         ___  __ _ _ __ ___ | || |  
   / _ \| '_ \ / _ \ '_ \ _____ / _ \/ _` | '_ ` _ \| || |_ 

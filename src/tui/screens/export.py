@@ -33,7 +33,7 @@ class ExportScreen(ModalScreen):
     #menu-container {
         width: 95;
         height: auto;
-        border: rounded $accent;
+        border: round $accent;
         background: $surface;
         padding: 1 2;
     }
@@ -68,7 +68,7 @@ class ExportScreen(ModalScreen):
     #plot-container {
         height: 10;
         background: $surface-darken-1;
-        border: rounded $primary;
+        border: round $primary;
     }
     
     SelectionList {
