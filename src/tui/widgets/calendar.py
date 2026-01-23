@@ -240,6 +240,7 @@ class CalendarWidget(Widget):
             # Days
             start_weekday = (month_start.weekday() + 1) % 7
             for _ in range(start_weekday):
+                # Empty spacer
                 grid.mount(CalendarDay(None))
                 
             current = month_start
@@ -247,26 +248,52 @@ class CalendarWidget(Widget):
                 has_data = current in self.data_dates
                 is_selected = current in self.selected_dates
                 
+                # Assign ID for fast lookup: day-YYYY-MM-DD
+                day_id = f"day-{current.isoformat()}"
                 day_widget = CalendarDay(current, has_data=has_data, selected=is_selected)
+                day_widget.id = day_id
+                
                 if current == self.cursor_date:
                     day_widget.add_class("cursor")
                 
                 grid.mount(day_widget)
                 current += timedelta(days=1)
 
-    def watch_cursor_date(self, new_date: date) -> None:
-        # Current view range:
+    def watch_cursor_date(self, new_date: date, old_date: date | None) -> None:
+        # 1. Try to find the old cursor and remove class
+        if old_date:
+            try:
+                old_widget = self.query_one(f"#day-{old_date.isoformat()}", CalendarDay)
+                old_widget.remove_class("cursor")
+            except:
+                pass # Probably not visible
+
+        # 2. Check if new cursor is waiting to be shown?
+        # Check if we need to shift view first
         start_curr = self.current_month
         next_month = (start_curr.replace(day=28) + timedelta(days=4)).replace(day=1) 
         prev_month = (start_curr - timedelta(days=1)).replace(day=1)
         month_after_next = (next_month.replace(day=28) + timedelta(days=4)).replace(day=1)
         
+        should_shift = False
         if new_date < prev_month:
              self.current_month = (self.current_month - timedelta(days=1)).replace(day=1)
+             should_shift = True
         elif new_date >= month_after_next:
              self.current_month = next_month
-
-        self.refresh_calendar()
+             should_shift = True
+             
+        if should_shift:
+            # Refresh will rebuild and apply cursor correctly
+            self.refresh_calendar()
+        else:
+            # 3. Try to find new cursor and add class
+            try:
+                new_widget = self.query_one(f"#day-{new_date.isoformat()}", CalendarDay)
+                new_widget.add_class("cursor")
+            except:
+                # Should be rare if logic above is correct, but safer to refresh
+                self.refresh_calendar()
 
     def watch_current_month(self, new_month: date) -> None:
         self.refresh_calendar()

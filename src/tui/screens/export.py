@@ -33,7 +33,7 @@ class ExportScreen(ModalScreen):
     #menu-container {
         width: 95;
         height: auto;
-        border: thick $accent;
+        border: rounded $accent;
         background: $surface;
         padding: 1 2;
     }
@@ -57,66 +57,38 @@ class ExportScreen(ModalScreen):
         padding-left: 2;
     }
 
-    .key {
-        color: $secondary;
-        text-style: bold;
-    }
-    
-    .value {
-        color: $primary;
-        text-style: bold;
-    }
-    
-    .description {
-        color: $text;
-    }
-
-    #calendar-container {
+    /* Sub-mode container styles */
+    #calendar-container, #plot-container, #filename-input, #location-input, #date-input {
         display: none;
         margin-top: 1;
         border-top: solid $primary;
         padding-top: 1;
     }
     
-    .mode-active #calendar-container {
-        display: block;
-    }
-    
     #plot-container {
-        display: none;
         height: 10;
-        border: solid $primary;
-        margin-top: 1;
         background: $surface-darken-1;
+        border: rounded $primary;
     }
     
     SelectionList {
         height: auto;
         border: none;
     }
-    
-    /* When in sub-mode, dim the main menu */
-    .dimmed {
-        opacity: 0.5;
-    }
-    
-    #filename-input {
-        display: none;
-        margin-top: 1;
-    }
-    
-    .filename-active #filename-input {
-        display: block;
-    }
+
+    /* Active states handle visibility */
+    .dimmed { opacity: 0.5; }
     """
     
     # Selection State
     selected_plots: Set[int] = set()
     selected_dates: Set[date] = set()
     filename: str = ""
+    location: str = ""
     
     # UI State
-    mode = reactive("MENU")  # MENU, CALENDAR, PLOT, FILENAME
+    mode = reactive("MENU")  # MENU, DATE_MENU, CALENDAR, PLOT, FILENAME, LOCATION, DATE_INPUT
+    date_input_mode = "RANGE" # RANGE, BEFORE, AFTER used when in DATE_INPUT mode
 
     def __init__(self, recorded_data: List[dict]):
         super().__init__()
@@ -134,10 +106,10 @@ class ExportScreen(ModalScreen):
             except:
                 pass
                 
-        # Defaults: All plots, All dates
+        # Defaults
         self.selected_plots = set(self.available_plots)
         self.filename = f"egm4_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        self.default_path = os.getcwd()
+        self.location = os.getcwd()
 
     def compose(self) -> ComposeResult:
         with Container(id="menu-container"):
@@ -146,7 +118,6 @@ class ExportScreen(ModalScreen):
             # Main Menu Area
             with Vertical(id="main-menu"):
                 yield Static("Actions", classes="menu-section")
-                # Use fixed width for keys to align descriptions
                 yield Static("  [b $accent]e[/]   Export Now", classes="menu-item")
                 yield Static("  [b $accent]q[/]   Cancel", classes="menu-item")
                 
@@ -156,6 +127,7 @@ class ExportScreen(ModalScreen):
                 
                 yield Static("Configuration", classes="menu-section")
                 yield Static("", id="file-status", classes="menu-item")
+                yield Static("", id="location-status", classes="menu-item")
             
             # Sub-mode areas
             with Vertical(id="calendar-container"):
@@ -165,6 +137,8 @@ class ExportScreen(ModalScreen):
                 yield SelectionList(id="plot-list")
                 
             yield Input(id="filename-input")
+            yield Input(id="location-input")
+            yield Input(id="date-input")
             
             # Helper text
             yield Static("", id="helper-text", classes="menu-item dimmed")
@@ -183,126 +157,198 @@ class ExportScreen(ModalScreen):
 
     def refresh_menu(self) -> None:
         """Update menu text based on state."""
-        # Plot Status
-        if len(self.selected_plots) == len(self.available_plots):
-            plot_str = "ALL"
-        elif not self.selected_plots:
-            plot_str = "NONE"
-        else:
-            plot_str = ",".join(str(p) for p in sorted(self.selected_plots))
-        self.query_one("#plot-status", Static).update(f"  [b $accent]p[/]   Plots: [b]{plot_str}[/b]")
+        # Update Status Lines
+        self._update_status_lines()
         
-        # Date Status
-        if not self.selected_dates:
-            date_str = "ALL"
-        else:
-            date_str = f"{len(self.selected_dates)} selected"
-        self.query_one("#date-status", Static).update(f"  [b $accent]d[/]   Dates: [b]{date_str}[/b]")
-        
-        # File Status
-        self.query_one("#file-status", Static).update(f"  [b $accent]f[/]   File:  [b]{self.filename}[/b]")
-        
-        # Visibility and Classes
-        menu = self.query_one("#main-menu")
-        cal_container = self.query_one("#calendar-container")
-        plot_container = self.query_one("#plot-container")
-        
-        cal = self.query_one("#calendar", CalendarWidget)
-        plot_list = self.query_one("#plot-list", SelectionList)
-        inp = self.query_one("#filename-input", Input)
+        # Visibility Logic
+        widgets = {
+            "menu": self.query_one("#main-menu"),
+            "cal": self.query_one("#calendar-container"),
+            "plot": self.query_one("#plot-container"),
+            "file": self.query_one("#filename-input"),
+            "loc": self.query_one("#location-input"),
+            "date_in": self.query_one("#date-input"),
+        }
         helper = self.query_one("#helper-text", Static)
         
-        # Reset visibility
-        menu.remove_class("dimmed")
-        cal_container.display = False
-        plot_container.display = False
-        inp.display = False
+        # Reset all
+        widgets["menu"].remove_class("dimmed")
+        for w in list(widgets.values())[1:]: w.display = False
         helper.update("")
         
-        if self.mode == "CALENDAR":
-            menu.add_class("dimmed")
-            cal_container.display = True
-            cal.focus()
-            helper.update("\n[dim]ARROWS: Move  SPACE: Toggle  ENTER: Done[/dim]")
+        if self.mode == "MENU":
+            helper.update("\n[dim]Select an option to configure export parameters.[/dim]")
             
-        elif self.mode == "FILENAME":
-            menu.add_class("dimmed")
-            inp.display = True
-            inp.value = self.filename
-            inp.focus()
-            helper.update("\n[dim]ENTER: Save filename  ESC: Cancel[/dim]")
+        elif self.mode == "DATE_MENU":
+            widgets["menu"].add_class("dimmed")
+            # Show options in helper
+            helper.update("\n[b]Date Menu:[/b]  [b $accent]c[/] Calendar  [b $accent]r[/] Range  [b $accent]b[/] Before  [b $accent]a[/] After  [b $accent]q[/] Back")
+            
+        elif self.mode == "CALENDAR":
+            widgets["menu"].add_class("dimmed")
+            widgets["cal"].display = True
+            self.query_one("#calendar").focus()
+            helper.update("\n[dim][b]ARROWS[/]: Move  [b]SPACE[/]: Toggle  [b]d[/]: Done[/dim]")
             
         elif self.mode == "PLOT":
-            menu.add_class("dimmed")
-            plot_container.display = True
-            plot_list.focus()
-            helper.update("\n[dim][b]SPACE[/]: Toggle  [b $accent]a[/]: All  [b $accent]n[/]: None  [b]ENTER[/]: Done[/dim]")
+            widgets["menu"].add_class("dimmed")
+            widgets["plot"].display = True
+            self.query_one("#plot-list").focus()
+            helper.update("\n[dim][b]SPACE[/]: Toggle  [b $accent]a[/]: All  [b $accent]n[/]: None  [b]p[/]: Done[/dim]")
+            
+        elif self.mode == "FILENAME":
+            widgets["menu"].add_class("dimmed")
+            widgets["file"].display = True
+            widgets["file"].value = self.filename
+            widgets["file"].focus()
+            helper.update("\n[dim]Enter filename. [b]ENTER[/]: Save  [b]ESC[/]: Cancel[/dim]")
+
+        elif self.mode == "LOCATION":
+            widgets["menu"].add_class("dimmed")
+            widgets["loc"].display = True
+            widgets["loc"].value = self.location
+            widgets["loc"].focus()
+            helper.update("\n[dim]Enter directory path. [b]ENTER[/]: Save  [b]ESC[/]: Cancel[/dim]")
+            
+        elif self.mode == "DATE_INPUT":
+            widgets["menu"].add_class("dimmed")
+            widgets["date_in"].display = True
+            widgets["date_in"].focus()
+            prefix = ""
+            if self.date_input_mode == "BEFORE": prefix = "<"
+            elif self.date_input_mode == "AFTER": prefix = ">"
+            helper.update(f"\n[dim]Enter date ({prefix}YYYY-MM-DD). [b]ENTER[/]: Save  [b]ESC[/]: Cancel[/dim]")
+
+    def _update_status_lines(self):
+        # Plots
+        if len(self.selected_plots) == len(self.available_plots): p_str = "ALL"
+        elif not self.selected_plots: p_str = "NONE"
+        else: p_str = ",".join(str(p) for p in sorted(self.selected_plots))
+        self.query_one("#plot-status", Static).update(f"  [b $accent]p[/]   Plots: [b]{p_str}[/b]")
+        
+        # Dates
+        if not self.selected_dates: d_str = "ALL"
+        else: d_str = f"{len(self.selected_dates)} selected"
+        self.query_one("#date-status", Static).update(f"  [b $accent]d[/]   Dates: [b]{d_str}[/b]")
+        
+        # File & Location
+        self.query_one("#file-status", Static).update(f"  [b $accent]f[/]   File:  [b]{self.filename}[/b]")
+        self.query_one("#location-status", Static).update(f"  [b $accent]l[/]   Loc:   [b]{self.location}[/b]")
 
     def on_key(self, event) -> None:
         """Handle global keys."""
         if self.mode == "MENU":
-            if event.key == "q" or event.key == "escape":
-                self.dismiss()
-            elif event.key == "e":
-                self.export_data()
-            elif event.key == "p":
-                self.mode = "PLOT"
-                self.refresh_menu()
-            elif event.key == "d":
-                self.mode = "CALENDAR"
-                self.refresh_menu()
-            elif event.key == "f":
-                self.mode = "FILENAME"
-                self.refresh_menu()
+            if event.key in ("q", "escape"): self.dismiss()
+            elif event.key == "e": self.export_data()
+            elif event.key == "p": self.mode = "PLOT"; self.refresh_menu()
+            elif event.key == "d": self.mode = "DATE_MENU"; self.refresh_menu()
+            elif event.key == "f": self.mode = "FILENAME"; self.refresh_menu()
+            elif event.key == "l": self.mode = "LOCATION"; self.refresh_menu()
                 
-        elif self.mode == "PLOT":
-            if event.key == "enter" or event.key == "escape":
-                # Sync selection before exiting
-                plot_list = self.query_one("#plot-list", SelectionList)
-                self.selected_plots = set(plot_list.selected)
-                self.mode = "MENU"
-                self.refresh_menu()
-            elif event.key == "a":
-                plot_list = self.query_one("#plot-list", SelectionList)
-                plot_list.select_all()
-            elif event.key == "n":
-                plot_list = self.query_one("#plot-list", SelectionList)
-                plot_list.deselect_all()
-            # SelectionList handles space/arrows internally for toggling
+        elif self.mode == "DATE_MENU":
+            if event.key in ("q", "escape", "d"): self.mode = "MENU"; self.refresh_menu()
+            elif event.key == "c": self.mode = "CALENDAR"; self.refresh_menu()
+            elif event.key == "r": self._start_date_input("RANGE")
+            elif event.key == "b": self._start_date_input("BEFORE")
+            elif event.key == "a": self._start_date_input("AFTER")
 
+        elif self.mode == "PLOT":
+            if event.key in ("enter", "escape", "p"):
+                # Sync & Exit
+                self.selected_plots = set(self.query_one("#plot-list", SelectionList).selected)
+                self.mode = "MENU"; self.refresh_menu()
+            elif event.key == "a": self.query_one("#plot-list", SelectionList).select_all()
+            elif event.key == "n": self.query_one("#plot-list", SelectionList).deselect_all()
+            
+        elif self.mode == "CALENDAR":
+             if event.key == "d": # Toggle off
+                 self.mode = "MENU"; self.refresh_menu()
+
+    def _start_date_input(self, mode: str):
+        self.date_input_mode = mode
+        inp = self.query_one("#date-input", Input)
+        inp.value = ""
+        placeholder = "YYYY-MM-DD..YYYY-MM-DD" if mode == "RANGE" else "YYYY-MM-DD"
+        inp.placeholder = placeholder
+        self.mode = "DATE_INPUT"
+        self.refresh_menu()
 
     @on(CalendarWidget.Submitted)
     def handle_calendar_done(self, message: CalendarWidget.Submitted):
         self.selected_dates = message.selected_dates
         self.mode = "MENU"
         self.refresh_menu()
-        # Focus back to container to catch keys
-        self.focus()
+        self.focus() # Catch keys
 
     @on(Input.Submitted)
-    def handle_filename_done(self, event: Input.Submitted):
-        if event.value.strip():
+    def handle_input_done(self, event: Input.Submitted):
+        if not event.value.strip():
+            self.mode = "MENU"; self.refresh_menu(); self.focus()
+            return
+
+        if event.input.id == "filename-input":
             self.filename = event.value.strip()
+        elif event.input.id == "location-input":
+            self.location = event.value.strip()
+        elif event.input.id == "date-input":
+            self._parse_date_input(event.value.strip())
+            
         self.mode = "MENU"
         self.refresh_menu()
         self.focus()
 
+    def _parse_date_input(self, text: str):
+        # Implement parsing logic based on mode or raw text
+        # Simple parsing for now
+        dates_found = set()
+        try:
+            if ".." in text:
+                start_s, end_s = text.split("..")
+                start = date.fromisoformat(start_s.strip())
+                end = date.fromisoformat(end_s.strip())
+                curr = start
+                while curr <= end:
+                    dates_found.add(curr)
+                    curr += timedelta(days=1)
+            elif text.startswith("<"):
+                limit = date.fromisoformat(text[1:].strip())
+                for d in self.available_dates:
+                    if d < limit: dates_found.add(d)
+            elif text.startswith(">"):
+                limit = date.fromisoformat(text[1:].strip())
+                for d in self.available_dates:
+                    if d > limit: dates_found.add(d)
+            else:
+                # Single date or special format
+                d = date.fromisoformat(text.strip())
+                dates_found.add(d)
+                
+            # Intersect with available? Or just set?
+            # Ideally user wants to select from available.
+            valid_dates = dates_found.intersection(self.available_dates)
+            if valid_dates:
+                self.selected_dates = valid_dates
+                self.query_one("#calendar", CalendarWidget).selected_dates = valid_dates
+                self.query_one("#calendar", CalendarWidget).refresh_calendar()
+                self.app.notify(f"Selected {len(valid_dates)} dates")
+            else:
+                self.app.notify("No records match that date range", severity="warning")
+                
+        except Exception:
+            self.app.notify("Invalid date format. Use YYYY-MM-DD", severity="error")
+
     def export_data(self) -> None:
-        # Same export logic as before
-        filtered_data = []
+        # Update path logic to use location
+        filtered_data = [] # ... same filtering ...
         for row in self.recorded_data:
-            if row.get('plot') not in self.selected_plots:
-                continue
-            
+            if row.get('plot') not in self.selected_plots: continue
             if self.selected_dates:
                 try:
                     ts = row.get('timestamp')
                     if isinstance(ts, str):
                         row_date = datetime.fromisoformat(ts).date()
-                        if row_date not in self.selected_dates:
-                            continue
-                except:
-                    continue
+                        if row_date not in self.selected_dates: continue
+                except: continue
             filtered_data.append(row)
             
         if not filtered_data:
@@ -310,10 +356,8 @@ class ExportScreen(ModalScreen):
             return
             
         try:
-            full_path = self.filename
-            if not os.path.isabs(full_path):
-                full_path = os.path.join(self.default_path, full_path)
-                
+            full_path = os.path.join(self.location, self.filename)
+            # Ensure directory exists
             os.makedirs(os.path.dirname(os.path.abspath(full_path)), exist_ok=True)
             
             headers = [
