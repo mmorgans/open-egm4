@@ -80,6 +80,8 @@ class MonitorScreen(Screen):
         self.is_paused = False
         self.recorded_data: list[dict] = []
         self.raw_log_file = None
+        self._warmup_logged = False  # Track if warmup message was shown
+        self._zero_logged = False  # Track if zero check message was shown
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -268,12 +270,20 @@ class MonitorScreen(Screen):
             temp = parsed.get('warmup_temp', 0)
             stats.device_status = f"WARMUP: {temp:.0f}C"
             stats.data_mode = ""  # Clear data mode during warmup
+            # Log once at warmup start
+            if not self._warmup_logged:
+                log.log_info("EGM warming up - ready at ~55C (see status panel)")
+                self._warmup_logged = True
             
         elif rec_type == 'Z':
             # Zero check in progress
             countdown = parsed.get('zero_countdown', 0)
-            stats.device_status = f"ZERO CHECK: {countdown:.0f}/14s"
+            stats.device_status = f"ZERO CHECK: {countdown:.0f}/15s"
             stats.data_mode = ""  # Clear data mode during zero check
+            # Log once at zero check start
+            if not self._zero_logged:
+                log.log_info("Zero checking in progress (15 seconds)")
+                self._zero_logged = True
             
         elif rec_type == 'Z_END':
             # End of memory dump (plain "Z" without value)
@@ -367,46 +377,13 @@ class MonitorScreen(Screen):
             self.notify("▶ Data stream resumed", severity="information")
 
     def action_export(self) -> None:
-        """Export data to CSV with proper headers matching EGM-4 manual."""
+        """Open the Export Wizard."""
         if not self.recorded_data:
             self.notify("No data to export", severity="warning")
             return
-        
-        filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-        
-        # Headers matching EGM-4 manual record structure
-        headers = [
-            'timestamp',      # Local timestamp when received
-            'type',           # M=Real Time, R=Memory
-            'plot',           # Plot No (0-99)
-            'record',         # Record No (1-9999)
-            'day',            # Day (1-31)
-            'month',          # Month (1-12)
-            'hour',           # Hour (1-24)
-            'minute',         # Minute (0-59)
-            'co2_ppm',        # CO2 Ref (ppm)
-            'h2o_mb',         # H2O Ref (mb)
-            'rht_c',          # RH Sensor Temp (°C)
-            'par',            # PAR (µmol m⁻² s⁻¹) - SRC-1
-            'rh_pct',         # %RH - SRC-1
-            'temp_c',         # Soil Temp (°C) - SRC-1
-            'dc_ppm',         # Delta CO2 (ppm) - SRC-1
-            'dt_s',           # Delta Time (s) - SRC-1
-            'sr_rate',        # Soil Resp Rate (g CO2/m²/hr) - SRC-1
-            'atmp_mb',        # Atmospheric Pressure (mb)
-            'probe_type',     # Probe Type code
-        ]
-        
-        try:
-            with open(filename, 'w', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
-                writer.writeheader()
-                writer.writerows(self.recorded_data)
             
-            self.notify(f"✓ Exported to {filename}", severity="information", timeout=5)
-            self.query_one("#log", LogWidget).log_success(f"Exported {len(self.recorded_data)} records to {filename}")
-        except Exception as e:
-            self.notify(f"Export failed: {e}", severity="error")
+        from src.tui.screens.export import ExportScreen
+        self.app.push_screen(ExportScreen(self.recorded_data))
 
     def action_big_mode(self) -> None:
         """Toggle high-visibility field mode."""

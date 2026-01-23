@@ -265,5 +265,9 @@ class ConnectScreen(Screen):
 
     @on(OptionList.OptionSelected)
     def handle_option_selected(self, event: OptionList.OptionSelected) -> None:
-        """Handle port selection - cancel countdown."""
-        self._cancel_auto_connect()
+        """Handle port selection - connect immediately."""
+        self._stop_countdown()
+        if event.option_id != "none":
+            self.query_one("#countdown", Static).update("")
+            self.query_one("#status", Static).update(f"Connecting to {event.option_id}...")
+            self.post_message(self.Connected(port=event.option_id))
