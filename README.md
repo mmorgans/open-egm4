@@ -9,12 +9,11 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 - Real-time CO₂ charting with multi-channel support
 - Session persistence with automatic database saving and resume capability
-- SRC-1 soil respiration chamber support with delta CO₂ and respiration rate
+- Multiple different probe types, including SRC-1
 - Plot-based data filtering for multi-location measurements
 - Smart export with plot and date filtering
 - Auto-saves raw data to timestamped log files and SQLite database
 - Device status indicators for warmup temperature and zero check progress
-- Cross-platform support for macOS, Windows, and Linux
 
 ## Installation
 
