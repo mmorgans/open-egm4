@@ -1,15 +1,16 @@
 # Welcome to Open-EGM4
 
-**Open-EGM4** is a modern, terminal-based interface (TUI) for the PP Systems EGM-4 CO2 Gas Analyze. It replaces legacy software with a fast, keyboard-driven, and visually rich application for field work and data analysis.
+Open-EGM4 is a terminal-based interface for the PP Systems EGM-4 CO₂ Gas Analyzer. It replaces legacy software with a keyboard-driven application for field work and data analysis.
 
 ## Key Features
 
-- **🚀 Live Monitoring:** Real-time plotting of CO2, Temperature, Humidity, and PAR.
-- **🎹 Keyboard-First Design:** Optimized for field laptops. Navigate entirely without a mouse.
-- **📊 Dynamic Charts:** Auto-scaling, non-destructive zooming, and multi-channel support.
-- **💾 Comparison Mode:** Track stats (Min/Max/Avg) and view live logs.
-- **📤 Advanced Export:** powerful "Magit-style" export menu with robust filtering by date and plot.
-- **🔌 Plug-and-Play:** Automatic serial port detection and connection handling.
+- Live Monitoring: Real-time plotting of CO₂, Temperature, Humidity, and PAR
+- Session Persistence: Automatic database saving with resume capability
+- Keyboard-First Design: Optimized for field laptops, navigate entirely without a mouse
+- Dynamic Charts: Auto-scaling, plot filtering, and multi-channel support
+- Plot Management: Track multiple measurement plots and filter data by location
+- Smart Export: Filter by plot and date with automatic intelligent filename generation
+- Plug-and-Play: Automatic serial port detection and connection handling
 
 ## Navigation
 
@@ -20,13 +21,22 @@
 ## Quick Start
 
 ```bash
-# Clone the repo
+# Install via pip
 git clone https://github.com/mmorgans/open-egm4.git
 cd open-egm4
-
-# Install dependencies
-pip install -r requirements.txt
+pip install .
 
 # Run
-python main.py
+open-egm4
 ```
+
+## What's New
+
+### Session Resume
+All data is automatically saved to a SQLite database. Resume any previous session from the connection screen to continue where you left off.
+
+### Smart Export
+New export screen with plot and date filtering. Filenames are automatically generated based on your filters for easy organization.
+
+### Database Persistence
+Every measurement is saved immediately. You won't lose data even if you quit unexpectedly.

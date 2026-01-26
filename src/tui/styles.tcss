@@ -54,6 +54,13 @@ ConnectScreen #status {
     color: $text-muted;
 }
 
+ConnectScreen .status-text {
+    margin-top: 1;
+    text-align: center;
+    color: $accent;
+    text-style: bold;
+}
+
 /* Monitor Screen - Split Panel Layout */
 MonitorScreen {
     layout: vertical;

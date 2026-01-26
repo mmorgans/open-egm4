@@ -6,7 +6,7 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Center, Vertical
 from textual.message import Message
-from textual.screen import Screen
+from textual.screen import Screen, ModalScreen
 from textual.widgets import Button, Footer, Header, OptionList, Static
 from textual.widgets.option_list import Option
 from serial.tools import list_ports
@@ -109,19 +109,82 @@ class ConnectScreen(Screen):
     BINDINGS = [
         ("r", "refresh_ports", "Refresh"),
         ("q", "app.quit", "Quit"),
-        ("enter", "connect_now", "Connect"),
+        ("ctrl+c", "app.quit", None),
+        ("enter", "connect_now", "Start New Session"),
+        ("s", "handle_resume", "Resume Session"),
     ]
 
     @dataclass
     class Connected(Message):
         """Message sent when a connection is established."""
         port: str
+        resume_session_id: int | None = None
+
+    class SessionSelectScreen(ModalScreen):
+        """Modal screen to select a session to resume."""
+        
+        DEFAULT_CSS = """
+        SessionSelectScreen {
+            align: center middle;
+            background: rgba(0,0,0,0.8);
+        }
+        
+        #session-container {
+            width: 60;
+            height: auto;
+            border: round $accent;
+            background: $surface;
+            padding: 1 2;
+        }
+        
+        .session-header {
+            text-style: bold;
+            color: $accent;
+            border-bottom: solid $primary;
+            margin-bottom: 1;
+            padding-bottom: 1;
+        }
+        """
+
+        def __init__(self, sessions: list[tuple[int, str, str]]):
+            super().__init__()
+            self.sessions = sessions
+            self.selected_id = None
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="session-container"):
+                yield Static("Select Session to Resume", classes="session-header")
+                yield OptionList(id="session-list")
+                yield Static("\n[dim]Press ENTER to select, ESC to cancel[/dim]", classes="help-text")
+
+        def on_mount(self) -> None:
+            opt_list = self.query_one("#session-list", OptionList)
+            for sess_id, start_time, notes in self.sessions:
+                try:
+                    dt = start_time.split('.')[0].replace('T', ' ')
+                except (AttributeError, IndexError):
+                    dt = start_time
+                label = f"Session #{sess_id} - {dt}"
+                if notes:
+                    label += f"\n[dim]{notes}[/dim]"
+                opt_list.add_option(Option(label, id=str(sess_id)))
+            opt_list.focus()
+
+        @on(OptionList.OptionSelected)
+        def on_select(self, event: OptionList.OptionSelected) -> None:
+            self.dismiss(int(event.option_id))
+            
+        def on_key(self, event) -> None:
+            if event.key == "escape":
+                self.dismiss(None)
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._countdown = AUTO_CONNECT_DELAY
         self._timer_handle = None
         self._auto_connect_cancelled = False
+        self._latest_session = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -130,14 +193,21 @@ class ConnectScreen(Screen):
                 yield Static(LOGO, id="logo")
                 yield Static("Select Serial Port", classes="config-label")
                 yield OptionList(id="port-list")
+                
                 yield Static("", id="countdown")
-                yield Button("Connect", id="connect-btn", variant="primary")
+                # Remove buttons - key bindings handle this now
+                
                 yield Static("[dim]Probe type auto-detected from data[/dim]", id="status")
+                yield Static("\n[dim][b]ENTER[/]: New Session  |  [b]s[/]: Resume Session[/dim]", 
+                           id="help-text", classes="status-text")
         yield Footer()
 
     def on_mount(self) -> None:
         """Populate port list and start auto-connect countdown."""
         self.refresh_ports()
+        
+        # Check for previous session - just to see if we should show hint
+        # Logic moved to help-text visibility if needed, but for now we always show prompt
         
         best_port = find_best_port()
         if best_port:
@@ -147,6 +217,48 @@ class ConnectScreen(Screen):
             self.query_one("#status", Static).update(
                 "No USB serial device detected - select a port manually"
             )
+
+    def action_handle_resume(self) -> None:
+        """Handle resume key press."""
+        self._stop_countdown()
+        
+        if not self.app.db:
+            return
+
+        sessions = self.app.db.get_recent_sessions(limit=10)
+        if not sessions:
+            return
+
+        def on_session_selected(session_id: int | None):
+            if session_id is None:
+                return  # Cancelled
+
+            # Proceeds to connect using the selected session
+            self._connect_with_resume(session_id)
+
+        self.app.push_screen(self.SessionSelectScreen(sessions), on_session_selected)
+
+    def _connect_with_resume(self, session_id: int) -> None:
+        """Connect to port and resume session."""
+        # Get selected port or auto-detect
+        option_list = self.query_one("#port-list", OptionList)
+        port_to_use = None
+        
+        if option_list.highlighted is not None:
+            selected = option_list.get_option_at_index(option_list.highlighted)
+            if selected.id != "none":
+                port_to_use = selected.id
+        
+        if not port_to_use:
+            port_to_use = find_best_port()
+            
+        if not port_to_use:
+            self.query_one("#status", Static).update("No port found for resume")
+            return
+
+        self.query_one("#countdown", Static).update("")
+        self.query_one("#status", Static).update(f"Resuming Session #{session_id} on {port_to_use}...")
+        self.post_message(self.Connected(port=port_to_use, resume_session_id=session_id))
 
     def _start_countdown(self) -> None:
         """Start the auto-connect countdown."""
@@ -262,6 +374,33 @@ class ConnectScreen(Screen):
     def handle_connect(self) -> None:
         """Handle connect button press."""
         self.action_connect_now()
+
+    @on(Button.Pressed, "#resume-btn")
+    def handle_resume(self) -> None:
+        """Handle resume button press."""
+        self._stop_countdown()
+        
+        # Get selected port or auto-detect
+        option_list = self.query_one("#port-list", OptionList)
+        port_to_use = None
+        
+        if option_list.highlighted is not None:
+            selected = option_list.get_option_at_index(option_list.highlighted)
+            if selected.id != "none":
+                port_to_use = selected.id
+        
+        if not port_to_use:
+            port_to_use = find_best_port()
+            
+        if not port_to_use:
+            self.query_one("#status", Static).update("No port check for resume")
+            return
+
+        if self._latest_session:
+            sess_id, _ = self._latest_session
+            self.query_one("#countdown", Static).update("")
+            self.query_one("#status", Static).update(f"Resuming Session #{sess_id} on {port_to_use}...")
+            self.post_message(self.Connected(port=port_to_use, resume_session_id=sess_id))
 
     @on(OptionList.OptionSelected)
     def handle_option_selected(self, event: OptionList.OptionSelected) -> None:

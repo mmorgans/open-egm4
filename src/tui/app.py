@@ -18,6 +18,7 @@ from textual.widgets import Footer, Header
 
 from src.tui.screens.connect import ConnectScreen
 from src.tui.screens.monitor import MonitorScreen
+from src.database import DatabaseHandler
 
 
 class EGM4App(App):
@@ -34,19 +35,29 @@ class EGM4App(App):
     
     BINDINGS = [
         ("d", "toggle_dark", "Dark/Light"),
-        ("q", "quit", "Quit"),
+        ("ctrl+c", "quit", None),  # Always quit, even in modals
         ("?", "help", "Help"),
     ]
 
     def on_mount(self) -> None:
         """Show connect screen on startup."""
+        try:
+            self.db = DatabaseHandler()
+        except Exception as e:
+            self.notify(f"Database Init Failed: {e}", severity="error")
+            self.db = None
+            
         self.push_screen("connect")
 
     @on(ConnectScreen.Connected)
     def handle_connection(self, event: ConnectScreen.Connected) -> None:
         """Handle successful connection from connect screen."""
-        # Create monitor screen with the selected port
-        monitor = MonitorScreen(port=event.port)
+        # Create monitor screen with the selected port and DB handler
+        monitor = MonitorScreen(
+            port=event.port, 
+            db_handler=self.db,
+            resume_session_id=event.resume_session_id
+        )
         self.push_screen(monitor)
 
     @on(MonitorScreen.Disconnected)

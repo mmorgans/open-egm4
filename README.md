@@ -1,19 +1,20 @@
 # Open EGM-4
 
-A modern Terminal User Interface (TUI) for the PP Systems EGM-4 Environmental Gas Monitor.
+A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
 ## Features
 
-- **Real-time CO₂ charting** with multi-channel support (CO₂, H₂O, PAR, Temperature, etc.)
-- **SRC-1 soil respiration chamber** support with delta CO₂ and respiration rate
-- **Plot-based data filtering** - view data from specific measurement plots
-- **Auto-saves raw data** to timestamped log files
-- **CSV export** with all parsed fields
-- **Device status indicators** - warmup temperature, zero check progress
-- **Cross-platform** - works on macOS, Windows, and Linux
+- Real-time CO₂ charting with multi-channel support
+- Session persistence with automatic database saving and resume capability
+- SRC-1 soil respiration chamber support with delta CO₂ and respiration rate
+- Plot-based data filtering for multi-location measurements
+- Smart export with plot and date filtering
+- Auto-saves raw data to timestamped log files and SQLite database
+- Device status indicators for warmup temperature and zero check progress
+- Cross-platform support for macOS, Windows, and Linux
 
 ## Installation
 
@@ -36,7 +37,7 @@ open-egm4
 git clone https://github.com/mmorgans/open-egm4
 cd open-egm4
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\\Scripts\\activate
 pip install -e .
 ```
 
@@ -73,63 +74,62 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 | Key | Action |
 |-----|--------|
-| `Q` | Quit (saves data) |
-| `E` | Export to CSV |
-| `C` | Clear all data |
-| `P` | Pause/resume data stream |
-| `B` | Big mode (large CO₂ display) |
-| `D` | Toggle dark/light theme |
+| `Q` | Quit and save data automatically |
+| `E` | Export to CSV with plot and date filters |
+| `C` | Clear chart data |
+| `P` | Pause or resume data stream |
+| `N` | Add timestamped note to log |
 | `?` | Help screen |
-
-### Channel Selection (1-9)
-
-| Key | Channel |
-|-----|---------|
-| `1` | CO₂ Raw (ppm) |
-| `2` | H₂O Raw (mb) |
-| `3` | PAR (µmol/m²/s) |
-| `4` | Chamber %RH |
-| `5` | Soil Temperature (°C) |
-| `6` | Delta CO₂ (ppm) |
-| `7` | Soil Respiration Rate |
-| `8` | Atmospheric Pressure |
-| `9` | Delta Time (s) |
 
 ### Chart Controls
 
 | Key | Action |
 |-----|--------|
-| `+` / `=` | Increase time span |
-| `-` / `_` | Decrease time span |
+| `+` / `=` | Increase time span, zoom out |
+| `-` / `_` | Decrease time span, zoom in |
 | `.` / `>` | Next plot |
 | `,` / `<` | Previous plot |
+
+### Connect Screen
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Navigate port or session list |
+| `Enter` | Connect to port or resume session |
+| `N` | Start new session |
+| `Q` | Quit |
 
 ## EGM-4 Device Operation
 
 ### Dumping Stored Data
-1. Press `4` (Data Output)
-2. Press `2` (RS232)
+
+1. Press `4` on the EGM-4 for Data Output
+2. Press `2` for RS232
 3. Press any key to start dump
 
 The app will display "MEMORY DUMP" and show download progress.
 
 ### Live Measurements
-1. Press `1` (Measurement)
+
+1. Press `1` on the EGM-4 for Measurement
 2. Data streams in real-time
 
 The app will display "REAL-TIME" mode indicator.
 
 ### Device Warmup
-When the EGM-4 is warming up, you'll see `WARMUP: XXC` until it reaches operating temperature (~55°C).
+
+When the EGM-4 is warming up, you'll see `WARMUP: XXC` until it reaches operating temperature around 55°C.
 
 ### Zero Check
-During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before you take take a measurement.
+
+During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before you can take a measurement.
 
 ## Output Files
 
 | File | Description |
 |------|-------------|
-| `raw_dump_YYYY-MM-DD.log` | Raw serial data (auto-saved each session) |
+| `egm4_data.sqlite` | Session database, auto-saved, enables resume |
+| `raw_dump_YYYY-MM-DD.log` | Raw serial data, auto-saved each session |
 | `egm4_data_YYYYMMDD_HHMMSS.csv` | Parsed data export with all fields |
 
 ### CSV Columns
@@ -137,20 +137,13 @@ During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before 
 The exported CSV includes all fields from the EGM-4 record format:
 
 - `timestamp` - When the record was received
-- `type` - M (real-time) or R (memory)
+- `type` - M for real-time or R for memory
 - `plot`, `record` - Plot and record numbers
 - `day`, `month`, `hour`, `minute` - Device timestamp
-- `co2_ppm`, `h2o_mb`, `rht_c` - Core IRGA readings
-- `par`, `rh_pct`, `temp_c` - Probe measurements (SRC-1)
+- `co2_ppm`, `h2o_mb`, `temp_c` - Core IRGA readings
+- `par`, `rh_pct` - Probe measurements for SRC-1
 - `dc_ppm`, `dt_s`, `sr_rate` - Delta CO₂ and respiration rate
 - `atmp_mb`, `probe_type` - Atmospheric pressure and probe code
-
-## Requirements
-
-- Python 3.10+
-- textual >= 0.40.0
-- textual-plotext >= 0.2.0
-- pyserial >= 3.5
 
 ## License
 

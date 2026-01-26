@@ -5,6 +5,11 @@ EGM4-chamber-manual.pdf
 # csv files that are exported from the EGM-4
 *.csv
 *.log
+
+# SQLite database (session data)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -212,4 +217,3 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-wiki/

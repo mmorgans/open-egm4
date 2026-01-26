@@ -19,6 +19,10 @@ from src.tui.widgets.legend import ChannelLegend
 from src.egm_interface import EGM4Serial
 from src.tui.screens.bigmode import BigModeScreen
 from src.tui.screens.help import HelpScreen
+from src.database import DatabaseHandler
+from src.analysis import FluxCalculator
+import time
+from src.tui.screens.note import NoteInputScreen
 
 
 class MonitorScreen(Screen):
@@ -33,22 +37,23 @@ class MonitorScreen(Screen):
     """
 
     BINDINGS = [
-        ("q", "quit_app", "Quit"),
+        ("q", "quit_app", "Quit"),  # Screen-specific quit
         ("c", "clear", "Clear"),
         ("e", "export", "Export"),
+        ("n", "add_note", "Note"),
         ("p", "pause", "Pause"),
         ("b", "big_mode", "Big"),
         ("d", "app.toggle_dark", "Theme"),
         # Channel selection - hidden from footer (shown in legend)
-        ("1", "select_cr", None),
-        ("2", "select_hr", None),
-        ("3", "select_par", None),
-        ("4", "select_rh", None),
-        ("5", "select_temp", None),
-        ("6", "select_dc", None),
-        ("7", "select_sr", None),
-        ("8", "select_atmp", None),
-        ("9", "select_dt", None),
+        ("1", "select_slot('1')", None),
+        ("2", "select_slot('2')", None),
+        ("3", "select_slot('3')", None),
+        ("4", "select_slot('4')", None),
+        ("5", "select_slot('5')", None),
+        ("6", "select_slot('6')", None),
+        ("7", "select_slot('7')", None),
+        ("8", "select_slot('8')", None),
+        ("9", "select_slot('9')", None),
         # Span control - hidden from footer (shown in legend)
         ("=", "increase_span", None),
         ("+", "increase_span", None),
@@ -59,6 +64,12 @@ class MonitorScreen(Screen):
         ("full_stop", "next_plot", None),
         ("less_than_sign", "prev_plot", None),
         ("greater_than_sign", "next_plot", None),
+        # Data cursor - arrow keys to navigate, 'i' to toggle inspect mode
+        ("i", "toggle_cursor", "Inspect"),
+        ("left", "cursor_left", None),
+        ("right", "cursor_right", None),
+        ("home", "cursor_home", None),
+        ("end", "cursor_end", None),
         ("?", "help", "Help"),
     ]
 
@@ -73,6 +84,8 @@ class MonitorScreen(Screen):
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
+        db_handler: DatabaseHandler | None = None,
+        resume_session_id: int | None = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self.port = port
@@ -82,6 +95,11 @@ class MonitorScreen(Screen):
         self.raw_log_file = None
         self._warmup_logged = False  # Track if warmup message was shown
         self._zero_logged = False  # Track if zero check message was shown
+        self.db = db_handler
+        self.session_id: int | None = resume_session_id
+        self._is_resuming = resume_session_id is not None
+        self.flux_calc = FluxCalculator(window_size=30)  # 30s window for Flux
+        self._plot_base_times = {} # Track base time for each plot to synthesize timestamps from DT
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -120,6 +138,116 @@ class MonitorScreen(Screen):
             self.raw_log_file.write(f"\n--- Session started {datetime.datetime.now().isoformat()} ---\n")
         except Exception:
             pass
+            
+        # Create DB Session
+        if self.db:
+            try:
+                if self._is_resuming and self.session_id:
+                    self._restore_session(self.session_id)
+                else:
+                    self.session_id = self.db.create_session(notes=f"Monitor session started on {self.port}")
+                    self.query_one("#log", LogWidget).log_success(f"New session #{self.session_id} started")
+            except Exception as e:
+                self.query_one("#log", LogWidget).log_error(f"DB Error: {e}")
+
+    def _restore_session(self, session_id: int) -> None:
+        """Restore data from a previous session."""
+        try:
+            log = self.query_one("#log", LogWidget)
+            chart = self.query_one("#chart", CO2PlotWidget)
+            stats = self.query_one("#stats", StatsWidget)
+            legend = self.query_one("#legend", ChannelLegend)
+
+            # Clear existing data to prevent overlap/duplicates
+            chart.clear_data()
+
+            log.log_info(f"Restoring session #{session_id}...")
+
+            # Fetch all readings
+            readings = self.db.get_session_readings(session_id)
+
+            if not readings:
+                log.log_warning("Session empty")
+                return
+
+            # CRITICAL: Sort readings by (plot_id, elapsed_time) to ensure
+            # DT values are monotonically increasing within each plot
+            # Memory dumps from the EGM may have out-of-order records
+            readings.sort(key=lambda r: (r['plot_id'], r['elapsed_time'] or 0))
+
+            count = 0
+
+            # Use batch mode to avoid replotting on every data point
+            for row in readings:
+                # Use stored elapsed_time directly if available (new behavior)
+                # This is the actual DT from the EGM device
+                stored_dt = row.get('elapsed_time')
+
+                if stored_dt is not None:
+                    dt_val = stored_dt
+                else:
+                    # Fallback for old data without elapsed_time column
+                    # Parse timestamp and calculate
+                    try:
+                        ts_str = row['timestamp']
+                        if isinstance(ts_str, str):
+                            ts = datetime.datetime.fromisoformat(ts_str)
+                        else:
+                            ts = ts_str
+                    except (ValueError, TypeError, AttributeError):
+                        ts = datetime.datetime.now()
+
+                    # Need to track first timestamp per plot for calculation
+                    pid = row['plot_id']
+                    if not hasattr(self, '_fallback_plot_starts'):
+                        self._fallback_plot_starts = {}
+                    if pid not in self._fallback_plot_starts:
+                        self._fallback_plot_starts[pid] = ts
+                    dt_val = (ts - self._fallback_plot_starts[pid]).total_seconds()
+
+                # Reconstruct parsed dict format expected by widgets
+                parsed = {
+                    'timestamp': row['timestamp'],
+                    'type': row['record_type'],
+                    'plot': row['plot_id'],
+                    'record': row['record_num'],
+                    'co2': row['co2'],  # Internal key
+                    'co2_ppm': row['co2'],
+                    'h2o': row['h2o'],
+                    'h2o_mb': row['h2o'],
+                    'temp': row['temp_c'],
+                    'temp_c': row['temp_c'], # Export key
+                    'atmp': row['pressure'],
+                    'atmp_mb': row['pressure'], # Export key
+                    'par': row['par'],
+                    'rh': row['humidity'],
+                    'rh_pct': row['humidity'], # Export key
+                    'dc': row['delta_co2'],
+                    'dc_ppm': row['delta_co2'], # Export key
+                    'sr': row['soil_resp_rate'],
+                    'sr_rate': row['soil_resp_rate'], # Export key
+                    'probe_type': row['probe_type'],
+                    'dt': dt_val,         # Calculated DT
+                    'dt_s': dt_val
+                }
+
+                # Add to local cache for export
+                self.recorded_data.append(parsed)
+
+                # Update widgets in batch mode (no replot per item)
+                chart.add_data(parsed, batch_mode=True)
+                stats.add_reading(row['co2'], record=row['record_num'])
+                count += 1
+
+            # Replot once after all data is loaded
+            chart.replot()
+
+            # Update legend with restored plots
+            legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
+            log.log_success(f"Restored {count} readings")
+
+        except Exception as e:
+            self.query_one("#log", LogWidget).log_error(f"Restore Failed: {e}")
 
     def _check_usb_port(self) -> None:
         """Check if the USB port is still present."""
@@ -206,6 +334,36 @@ class MonitorScreen(Screen):
         timestamp = datetime.datetime.now().isoformat()
         
         if rec_type in ('R', 'M'):
+            # Try to synthesize timestamp from DT (if available) for better consistency
+            # This is crucial for Memory Dumps where arrival time != measurement time
+            dt_val = parsed.get('dt')
+            plot_id = parsed.get('plot', 0)
+            
+            if dt_val is not None:
+                # Type 8 (SRC) and others with DT
+                
+                # Check for new measurement cycle (DT reset)
+                reset_base = False
+                if not hasattr(self, '_last_dt_per_plot'):
+                    self._last_dt_per_plot = {}
+                
+                last = self._last_dt_per_plot.get(plot_id)
+                if last is not None and dt_val < last:
+                    reset_base = True
+                self._last_dt_per_plot[plot_id] = dt_val
+
+                if plot_id not in self._plot_base_times or reset_base:
+                    # Initialize/Reset base time: current time minus elapsed dt
+                    # This aligns 'now' with the correct relative position in the timeline
+                    self._plot_base_times[plot_id] = datetime.datetime.now() - datetime.timedelta(seconds=dt_val)
+                
+                # Calculate absolute timestamp from base + dt
+                new_ts = self._plot_base_times[plot_id] + datetime.timedelta(seconds=dt_val)
+                timestamp = new_ts.isoformat()
+            
+            # Inject timestamp for DB consistency (and for Resume restoration)
+            parsed['timestamp'] = timestamp
+            
             co2 = parsed.get('co2_ppm', 0)
             record = parsed.get('record', 0)
             plot = parsed.get('plot', 0)
@@ -234,12 +392,30 @@ class MonitorScreen(Screen):
             }
             self.recorded_data.append(export_row)
             
+            # DB Insert (Async Worker)
+            if self.db and self.session_id:
+                self.save_reading_worker(self.session_id, parsed)
+            
             chart.add_data(parsed)
-            stats.add_reading(co2)
+            stats.add_reading(co2, record=parsed.get('record'))
+            
+            # Real-time Flux Calc
+            self.flux_calc.add_point(time.time(), co2)
+            res = self.flux_calc.calculate()
+            stats.flux_slope = res.slope
+            stats.flux_r2 = res.r_squared
+            
             stats.record_count += 1
             stats.data_mode = rec_type  # Update mode indicator (M=Real-Time, R=Memory)
             stats.device_status = ""  # Clear warmup/zero status when data arrives
-            log.log_data(plot, record, co2)
+            
+            # Use compact counter for memory dumps (R), individual logs for real-time (M)
+            if rec_type == 'R':
+                if not log.is_downloading:
+                    log.start_download()
+                log.log_download_record(plot, record, co2)
+            else:
+                log.log_data(plot, record, co2)
             
             # Update legend with current plot info
             legend = self.query_one("#legend", ChannelLegend)
@@ -301,7 +477,9 @@ class MonitorScreen(Screen):
         """Handle probe type change detection."""
         legend = self.query_one("#legend", ChannelLegend)
         legend.set_probe_type(event.probe_type)
-        # Maybe show an unobtrusive indicator if needed, but the legend update is clear
+        # Debug log 
+        log = self.query_one("#log", LogWidget)
+        log.log_event(f"Probe type detected: {event.probe_type}", "warning")
 
     @on(Message)
     def handle_serial_error(self, event: Message) -> None:
@@ -346,8 +524,10 @@ class MonitorScreen(Screen):
             filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
             try:
                 with open(filename, 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    writer.writerow(["Timestamp", "Raw_Data"])
+                    # Get fieldnames from first record
+                    fieldnames = list(self.recorded_data[0].keys())
+                    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+                    writer.writeheader()
                     writer.writerows(self.recorded_data)
             except Exception:
                 pass
@@ -395,34 +575,43 @@ class MonitorScreen(Screen):
         self._big_screen = big_screen
         self.app.push_screen(big_screen)
 
-    # Channel selection actions (SRC mode: 8 channels)
-    def _select_channel(self, channel: str) -> None:
-        """Select a channel to display on the chart."""
+    async def action_add_note(self) -> None:
+        """Open note input dialog."""
+        def handle_note(note: str | None) -> None:
+            if note:
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                # Log to UI
+                self.query_one("#log", LogWidget).log_info(f"NOTE: {note}")
+                # Log to raw file
+                if self.raw_log_file:
+                    try:
+                        self.raw_log_file.write(f"NOTE [{timestamp}] {note}\n")
+                        self.raw_log_file.flush()
+                    except (IOError, OSError):
+                        pass
+                    
+        self.app.push_screen(NoteInputScreen(), handle_note)
+
+    @work(thread=True)
+    def save_reading_worker(self, session_id: int, data: dict) -> None:
+        """Background worker to save data to DB without blocking UI."""
+        try:
+            if self.db:
+                self.db.insert_reading(session_id, data)
+        except Exception:
+            pass
+
+    # Channel selection actions (Dynamic)
+    def action_select_slot(self, slot_idx: str) -> None:
+        """Select a channel by its slot index (1-9)."""
         chart = self.query_one("#chart", CO2PlotWidget)
         legend = self.query_one("#legend", ChannelLegend)
-        chart.set_active_channel(channel)
-        legend.set_active(channel)
-
-    def action_select_cr(self) -> None:
-        self._select_channel("cr")
-
-    def action_select_hr(self) -> None:
-        self._select_channel("hr")
-
-    def action_select_par(self) -> None:
-        self._select_channel("par")
-
-    def action_select_rh(self) -> None:
-        self._select_channel("rh")
-
-    def action_select_temp(self) -> None:
-        self._select_channel("temp")
-
-    def action_select_dc(self) -> None:
-        self._select_channel("dc")
-
-    def action_select_sr(self) -> None:
-        self._select_channel("sr")
+        
+        # Chart finds the key for this slot based on current config (SRC/CPY/etc)
+        active_key = chart.set_active_by_slot_index(slot_idx)
+        
+        if active_key:
+            legend.set_active(active_key)
 
     def action_select_atmp(self) -> None:
         self._select_channel("atmp")
@@ -432,18 +621,18 @@ class MonitorScreen(Screen):
 
     # Span control actions
     def action_increase_span(self) -> None:
-        """Double the chart history span (max 600)."""
+        """Increase chart time span."""
         chart = self.query_one("#chart", CO2PlotWidget)
-        new_span = min(600, chart.max_points * 2)
-        if new_span != chart.max_points:
-            chart.max_points = new_span
+        legend = self.query_one("#legend", ChannelLegend)
+        chart.increase_span()
+        legend.set_span(int(chart.view_span))
 
     def action_decrease_span(self) -> None:
-        """Halve the chart history span (min 30)."""
+        """Decrease chart time span."""
         chart = self.query_one("#chart", CO2PlotWidget)
-        new_span = max(30, chart.max_points // 2)
-        if new_span != chart.max_points:
-            chart.max_points = new_span
+        legend = self.query_one("#legend", ChannelLegend)
+        chart.decrease_span()
+        legend.set_span(int(chart.view_span))
 
     def action_help(self) -> None:
         """Show the help screen."""
@@ -462,6 +651,31 @@ class MonitorScreen(Screen):
         legend = self.query_one("#legend", ChannelLegend)
         chart.prev_plot()
         legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
+
+    def action_toggle_cursor(self) -> None:
+        """Toggle data cursor mode."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.toggle_cursor()
+
+    def action_cursor_left(self) -> None:
+        """Move cursor left."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.cursor_left()
+
+    def action_cursor_right(self) -> None:
+        """Move cursor right."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.cursor_right()
+
+    def action_cursor_home(self) -> None:
+        """Move cursor to start."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.cursor_home()
+
+    def action_cursor_end(self) -> None:
+        """Move cursor to end."""
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.cursor_end()
 
 
 # Custom message types

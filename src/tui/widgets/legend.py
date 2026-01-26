@@ -5,24 +5,65 @@ from rich.text import Text
 from textual.widget import Widget
 
 
-# SRC mode channels (8 channels)
+# SRC-1 mode channels (5 channels - H2O removed as no humidity probe installed)
 CHANNEL_COLORS_SRC = {
-    'cr':   ('1', 'Cr',   '#FF3232'),   # CO2 Raw (Red)
-    'hr':   ('2', 'Hr',   '#00FFC8'),   # H2O Raw
-    'par':  ('3', 'PAR',  '#FFFF64'),   # Light
-    'rh':   ('4', '%RH',  '#64FF64'),   # Chamber humidity
-    'temp': ('5', 'Temp', '#3264FF'),   # Soil temperature (Blue)
-    'dc':   ('6', 'DC',   '#32FF32'),   # Delta CO2 (Green)
-    'sr':   ('7', 'SR',   '#C8C8C8'),   # Soil respiration
-    'atmp': ('8', 'ATMP', '#B4B4FF'),   # Atm pressure
-    'dt':   ('9', 'DT',   '#646464'),   # Delta Time (Dark Grey)
+    'cr':   ('1', 'CO2',       '#FF3232'),   # CO2 (Red)
+    'dc':   ('2', 'Delta CO2', '#32FF32'),   # Delta CO2 (Green)
+    'dt':   ('3', 'Delta Time', '#646464'),  # Delta Time (Grey)
+    'sr':   ('4', 'Soil Resp', '#FFB464'),   # Soil respiration (Orange)
+    'atmp': ('5', 'ATMP',      '#B4B4FF'),   # Atm pressure
 }
 
-# IRGA mode channels (3 channels - base EGM only)
+# Type 0: IRGA Only (3 channels - just the EGM analyzer)
 CHANNEL_COLORS_IRGA = {
-    'cr':   ('1', 'Cr',   '#3296FF'),
-    'hr':   ('2', 'Hr',   '#00FFC8'),
-    'atmp': ('3', 'ATMP', '#B4B4FF'),
+    'cr':   ('1', 'CO2',    '#FF3232'),   # CO2 (Red)
+    'hr':   ('2', 'H2O',    '#00FFC8'),   # H2O
+    'atmp': ('3', 'ATMP',   '#B4B4FF'),   # Atm pressure
+}
+
+# Fallback for unknown types
+CAMERA_COLORS_GENERIC = {
+    'cr':   ('1', 'CO2',    '#3296FF'),
+    'hr':   ('2', 'H2O',    '#00FFC8'),
+    'aux1': ('3', 'Aux1',   '#C8C8C8'),
+    'aux2': ('4', 'Aux2',   '#C8C8C8'),
+    'aux3': ('5', 'Aux3',   '#C8C8C8'),
+    'aux4': ('6', 'Aux4',   '#C8C8C8'),
+    'aux5': ('7', 'Aux5',   '#C8C8C8'),
+    'atmp': ('8', 'Air Pres.', '#B4B4FF'),
+}
+
+CHANNEL_COLORS_HTR = {
+    'cr':   ('1', 'CO2',    '#FF3232'),
+    'hr':   ('2', 'H2O',    '#00FFC8'),
+    'par':  ('3', 'Light',  '#FFFF64'),
+    'rh':   ('4', 'RH',     '#64FF64'),
+    'temp': ('5', 'Temp',   '#3264FF'),
+    'atmp': ('8', 'Air Pres.', '#B4B4FF'),
+}
+
+CHANNEL_COLORS_CPY = {
+    'cr':   ('1', 'CO2',    '#FF3232'),
+    'hr':   ('2', 'H2O',    '#00FFC8'),
+    'par':  ('3', 'Light',  '#FFFF64'),
+    'evap': ('4', 'Evap',   '#1E90FF'),
+    'temp': ('5', 'Temp',   '#3264FF'),
+    'dc':   ('6', 'ΔCO2',   '#32FF32'),
+    'flow': ('7', 'Flow',   '#C8C8C8'),
+    'sr':   ('8', 'Soil Resp', '#FFA500'),
+    'atmp': ('9', 'Air Pres.', '#B4B4FF'),
+}
+
+CHANNEL_COLORS_PMR = {
+    'cr':   ('1', 'CO2',    '#FF3232'),
+    'hr':   ('2', 'H2O',    '#00FFC8'),
+    'par':  ('3', 'Light',  '#FFFF64'),
+    'rh':   ('4', 'RH In',  '#64FF64'),
+    'temp': ('5', 'Temp',   '#3264FF'),
+    'rh_out':('6', 'RH Out', '#32FF32'),
+    'flow': ('7', 'Flow',   '#C8C8C8'),
+    'gs':   ('8', 'GS',     '#FFA500'),
+    'atmp': ('9', 'Air Pres.', '#B4B4FF'),
 }
 
 
@@ -44,25 +85,46 @@ class ChannelLegend(Widget):
         id: str | None = None,
         classes: str | None = None,
         disabled: bool = False,
-        probe_type: str = "SRC",
+        probe_type: str = "GENERIC",
     ) -> None:
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         self._active: str = 'cr'
         self._probe_type = probe_type
-        self._channel_colors = CHANNEL_COLORS_SRC if probe_type == "SRC" else CHANNEL_COLORS_IRGA
+        # Default init
+        self.set_probe_type(probe_type)
+        self._span: int = 600  # Default span in seconds
 
     def set_probe_type(self, probe_type: str) -> None:
-        """switch between 'SRC' and 'IRGA' configs."""
-        if probe_type == self._probe_type:
-            return
+        """switch between configs."""
+        # probe_type might be "8", "GENERIC", etc.
+        # convert to int if digit
+        pt_code = 0
+        try:
+            pt_code = int(probe_type)
+        except (ValueError, TypeError):
+             # handle string keys if passed
+             pass
         
-        self._probe_type = probe_type
-        self._channel_colors = CHANNEL_COLORS_SRC if probe_type == "SRC" else CHANNEL_COLORS_IRGA
+        if pt_code == 0:
+            self._channel_colors = CHANNEL_COLORS_IRGA
+        elif pt_code == 8 or probe_type == "SRC":
+            self._channel_colors = CHANNEL_COLORS_SRC
+        elif pt_code == 11:
+            self._channel_colors = CHANNEL_COLORS_CPY
+        elif pt_code == 7:
+             self._channel_colors = CHANNEL_COLORS_PMR
+        elif pt_code in (1, 2, 3):
+             self._channel_colors = CHANNEL_COLORS_HTR
+        else:
+             self._channel_colors = CAMERA_COLORS_GENERIC
+        
+        self._probe_type = str(pt_code)
         
         # Reset active if invalid
         if self._active not in self._channel_colors:
             self._active = 'cr'
         
+        # Trigger re-render to show new labels
         self.refresh()
 
     def set_active(self, channel: str) -> None:
@@ -75,6 +137,11 @@ class ChannelLegend(Widget):
         """Update plot filter display info."""
         self._current_plot = current_plot
         self._known_plots = known_plots
+        self.refresh()
+
+    def set_span(self, span_seconds: int) -> None:
+        """Update the displayed span value."""
+        self._span = span_seconds
         self.refresh()
 
     def render(self) -> RenderableType:
@@ -96,6 +163,7 @@ class ChannelLegend(Widget):
         
         # Span control hint
         text.append("  |  +/- Span", style="dim")
+        text.append(f": {self._span}s", style="bold cyan")
         
         # Plot selector hint
         text.append("  |  </>", style="dim")

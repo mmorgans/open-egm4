@@ -29,6 +29,11 @@ class StatsWidget(Widget):
     is_paused: reactive[bool] = reactive(False)
     data_mode: reactive[str] = reactive("")  # "M" for Real-Time, "R" for Memory
     device_status: reactive[str] = reactive("")  # "WARMUP:55", "ZERO:10", or ""
+    hw_record: reactive[int | None] = reactive(None)
+    
+    # Scientific Stats
+    flux_slope: reactive[float] = reactive(0.0)
+    flux_r2: reactive[float] = reactive(0.0)
 
     def __init__(
         self,
@@ -41,10 +46,12 @@ class StatsWidget(Widget):
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         self._history: deque[float] = deque(maxlen=100)
 
-    def add_reading(self, co2: float) -> None:
+    def add_reading(self, co2: float, record: int | None = None) -> None:
         """Add a new CO2 reading to history and update current value."""
         self._history.append(co2)
         self.current_co2 = co2
+        if record is not None:
+            self.hw_record = record
 
     def clear_history(self) -> None:
         """Clear the history data."""
@@ -139,7 +146,21 @@ class StatsWidget(Widget):
         
         table.add_row("Average", avg)
         table.add_row("Min/Max", rng)
-        table.add_row("Records", str(self.record_count))
+        
+        # Flux Data
+        if self.flux_slope != 0:
+            flux_str = f"{self.flux_slope:+.2f} ppm/s"
+            r2_str = f"{self.flux_r2:.2f}"
+            table.add_row("Flux", Text(flux_str, style="bold cyan"))
+            table.add_row("R²", Text(r2_str, style="bold magenta"))
+        else:
+            table.add_row("Flux", "---")
+        
+
+        
+        table.add_row("Session Rec", str(self.record_count))
+        if self.hw_record is not None:
+            table.add_row("Device REC", Text(str(self.hw_record), style="bold yellow"))
 
         # Stability
         stab = stats['stability']

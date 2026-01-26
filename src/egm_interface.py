@@ -163,6 +163,86 @@ class EGM4Serial:
         Pos 58-60: AP (Atmospheric Pressure, mb)
         Pos 61-62: PT (Probe Type)
         """
+        
+        # Helper conversion functions
+        def f10(x): return float(x) / 10.0
+        def f100(x): return float(x) / 100.0
+        
+        # Define field mappings for different probe types based on EGM-4 Manual
+        # Each tuple: (start_idx, end_idx, field_key, converson_func)
+        PROBE_DEFINITIONS = {
+            # Type 0: No Sensor (mV inputs)
+            0: [
+                (30, 34, 'aux1', int), (34, 38, 'aux2', int), (38, 42, 'aux3', int),
+                (42, 46, 'aux4', int), (46, 50, 'aux5', int),
+            ],
+            # Type 1: STP-1 / CH15T (A=PAR, B=RH(f10), C=Temp(f10), E=mV5)
+            1: [
+                (30, 34, 'par', int),
+                (34, 38, 'rh', f10),
+                (38, 42, 'temp', f10),
+                (46, 50, 'aux5', int),
+            ],
+            # Type 2: HTR-2 (A=PAR, B=RH(f10), C=Temp(f10))
+            2: [
+                (30, 34, 'par', int),
+                (34, 38, 'rh', f10),
+                (38, 42, 'temp', f10),
+            ],
+            # Type 3: HTR-1 (Same as Type 2)
+            3: [
+                (30, 34, 'par', int),
+                (34, 38, 'rh', f10),
+                (38, 42, 'temp', f10),
+            ],
+            # Type 7: PMR-4 Porometer
+            7: [
+                (30, 34, 'par', int),
+                (34, 38, 'rh', f10), # RH In
+                (38, 42, 'temp', f10),
+                (42, 46, 'rh_out', f10), # RH Out
+                (46, 50, 'flow', f10),   # Flow
+                (50, 54, 'gs', int),     # GS
+            ],
+            # Type 8: SRC-1 Soil Respiration Chamber
+            # Note: SRC-1 has NO PAR/RH/Temp sensors - columns A-C are always 0
+            # Empirically verified positions (may differ from manual by 1 char):
+            # - DC (Delta CO2) at [42:46] or could be at [43:47]
+            # - DT/SR handled in post-processing from end of record
+            8: [
+                # DC and DT seem unreliable from fixed positions
+                # SR and ATMP are parsed from END of record in post-processing
+            ],
+            # Type 11: CPY-3 / CFX-1 Open System
+            11: [
+                (30, 34, 'par', int),
+                (34, 38, 'evap', int),                   # Evap Rate (0000)
+                (38, 42, 'temp', f10),
+                (42, 46, 'dc', int),
+                (46, 50, 'flow', f10),                   # Flow (000.0)
+                (50, 54, 'sr_mag', f100),
+                (54, 55, 'flow_mult', int),              # G: Flow Mult
+                (56, 58, 'sr_sign', str),
+            ],
+            # Type 0: IRGA Only (No Sensor Connected)
+            # Positions 31-50 are raw mV from pins 1-5
+            0: [
+                (30, 34, 'aux1', int),   # mV Pin 1
+                (34, 38, 'aux2', int),   # mV Pin 2
+                (38, 42, 'aux3', int),   # mV Pin 3
+                (42, 46, 'aux4', int),   # mV Pin 4
+                (46, 50, 'aux5', int),   # mV Pin 5
+            ],
+            # Default/Generic (Probes 4, 5, 6, 9, 10, 13 etc)
+            'default': [
+                (30, 34, 'aux1', int),
+                (34, 38, 'aux2', int),
+                (38, 42, 'aux3', int),
+                (42, 46, 'aux4', int),
+                (46, 50, 'aux5', int),
+            ]
+        }
+
         data = {}
         try:
             # Check for valid R or M record
@@ -193,112 +273,71 @@ class EGM4Serial:
                         data['rht'] = 0.0
                 
                 # Get probe type from end of record (last 2 chars)
+                # PT is always at the end of the record, positions vary by record length
                 probe_type = 0
-                if len(line) >= 62:
-                    try:
-                        probe_type = int(line[60:62])
-                    except ValueError:
-                        # Try last 2 chars if 60:62 fails
-                        try:
-                            probe_type = int(line[-2:])
-                        except:
-                            probe_type = 0
+                try:
+                    # PT is the last 2 characters of the record
+                    probe_type = int(line[-2:])
+                except ValueError:
+                    probe_type = 0
+                
                 data['probe_type'] = probe_type
                 
-                # Parse probe-specific fields A-H (pos 30-57)
-                # A: 30-33, B: 34-37, C: 38-41, D: 42-45
-                # E: 46-49, F: 50-53, G: 54-55, H: 56-57
+                # Parse probe-specific fields using definition
+                defs = PROBE_DEFINITIONS.get(probe_type, PROBE_DEFINITIONS['default'])
                 
+                for start, end, key, func in defs:
+                    if len(line) >= end:
+                        try:
+                            # Special handling for SR sign
+                            if key == 'sr_sign':
+                                # This is handled later/differently in original code, 
+                                # but let's just parse it if present to helper var
+                                pass 
+                            else:
+                                val_str = line[start:end]
+                                data[key] = func(val_str)
+                        except:
+                            # Set default 0 or 0.0 based on func type? 
+                            # Simplest is just 0
+                            data[key] = 0
+
+                # VERIFIED positions from end for SRC-1 (Type 8):
+                #   PT   = line[-2:]    (2 chars) - Probe Type
+                #   AP   = line[-6:-2]  (4 chars) - Atmospheric Pressure in mb
+                #   ??   = line[-10:-6] (4 chars) - Padding/sign (0000)
+                #   SR   = line[-14:-10](4 chars) - Soil Respiration rate (÷100 for gCO2/m2/hr)
+                #   DT   = line[-18:-14](4 chars) - Delta Time in seconds (cumulative)
+                #   DC   = line[-22:-18](4 chars) - Delta CO2 in ppm (cumulative)
                 if probe_type == 8:
-                    # SRC-1 Soil Respiration Chamber
-                    # A: PAR (4 chars)
-                    if len(line) >= 34:
-                        try:
-                            data['par'] = int(line[30:34])
-                        except:
-                            data['par'] = 0
-                    
-                    # B: %RH (4 chars)
-                    if len(line) >= 38:
-                        try:
-                            data['rh'] = int(line[34:38])
-                        except:
-                            data['rh'] = 0
-                    
-                    # C: Temp (4 chars, format 000.0 -> divide by 10)
-                    if len(line) >= 42:
-                        try:
-                            data['temp'] = float(line[38:42]) / 10.0
-                        except:
-                            data['temp'] = 0.0
-                    
-                    # D: DC - Delta CO2 (4 chars)
-                    if len(line) >= 46:
-                        try:
-                            data['dc'] = int(line[42:46])
-                        except:
-                            data['dc'] = 0
-                    
-                    # E: DT - Delta Time (4 chars)
-                    if len(line) >= 50:
-                        try:
-                            data['dt'] = int(line[46:50])
-                        except:
-                            data['dt'] = 0
-                    
-                    # F: SR Rate (4 chars, format 00.00 -> divide by 100)
-                    if len(line) >= 54:
-                        try:
-                            sr_magnitude = float(line[50:54]) / 100.0
-                        except:
-                            sr_magnitude = 0.0
-                        
-                        # H: +/- SR sign (pos 56-57, 00=positive, 01=negative)
-                        sr_sign = 1
-                        if len(line) >= 58:
-                            try:
-                                if line[56:58] == '01':
-                                    sr_sign = -1
-                            except:
-                                pass
-                        data['sr'] = sr_magnitude * sr_sign
-                    
-                    # G: empty for SRC-1
-                    
-                elif probe_type == 0:
-                    # No sensor - IRGA standalone (raw mV values)
-                    if len(line) >= 34:
-                        try:
-                            data['mv_pin1'] = int(line[30:34])
-                        except:
-                            data['mv_pin1'] = 0
-                    if len(line) >= 38:
-                        try:
-                            data['mv_pin2'] = int(line[34:38])
-                        except:
-                            data['mv_pin2'] = 0
-                    if len(line) >= 42:
-                        try:
-                            data['mv_pin3'] = int(line[38:42])
-                        except:
-                            data['mv_pin3'] = 0
-                    if len(line) >= 46:
-                        try:
-                            data['mv_pin4'] = int(line[42:46])
-                        except:
-                            data['mv_pin4'] = 0
-                    if len(line) >= 50:
-                        try:
-                            data['mv_pin5'] = int(line[46:50])
-                        except:
-                            data['mv_pin5'] = 0
-                
-                # AP: Atmospheric Pressure (pos 58-60, 3 chars, in mb)
-                if len(line) >= 61:
                     try:
-                        data['atmp'] = int(line[58:61])
+                        # ATMP is 4 chars before PT
+                        atmp_str = line[-6:-2]
+                        data['atmp'] = int(atmp_str)
                     except:
                         data['atmp'] = 0
+                    
+                    try:
+                        # SR (Soil Respiration rate)
+                        sr_str = line[-14:-10]
+                        sr_val = float(sr_str) / 100.0  # Convert to gCO2/m2/hr
+                        data['sr'] = sr_val
+                    except:
+                        data['sr'] = 0.0
+                    
+                    try:
+                        # DT (Delta Time in seconds, cumulative)
+                        dt_str = line[-18:-14]
+                        data['dt'] = int(dt_str)
+                    except:
+                        data['dt'] = 0
+                    
+                    try:
+                        # DC (Delta CO2 in ppm, cumulative rise)
+                        dc_str = line[-22:-18]
+                        data['dc'] = int(dc_str)
+                    except:
+                        data['dc'] = 0
                 
                 # Device timestamp
                 from datetime import datetime
