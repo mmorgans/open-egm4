@@ -1,0 +1,533 @@
+#+TITLE: Using the PP Systems EGM-4 Environmental Gas Monitor
+#+AUTHOR: Morgan
+#+DATE: 2026-01-27
+
+* Warning: Serial Port and Data Management
+
+The EGM-4 uses a RS-232 serial connection that can be finicky. Improper connection can result in corrupted data streams or lost measurements. Always verify your serial port is properly configured before beginning data collection. Additionally, the device has limited internal memory: failing to dump data regularly will result in permanent data loss when the buffer fills.
+
+* Introduction
+
+The PP Systems EGM-4 is a portable infrared gas analyzer (IRGA) designed for measuring soil CO₂ efflux in field conditions. The device connects to various chamber types and soil probes, records environmental parameters, and stores measurements in internal memory. This guide covers complete operation of the EGM-4 hardware alongside the Open-EGM4 software interface, common field scenarios, and troubleshooting procedures.
+
+*Goal:* To master EGM-4 operation from initial setup through data collection, export, and analysis using both the legacy software and the new Open-EGM4 terminal interface.
+
+* Requirements
+
+** Hardware
+- PP Systems EGM-4 Environmental Gas Monitor
+- RS-232 serial cable (DB-9 null modem)
+- USB-to-serial adapter (if your computer lacks a serial port)
+- Soil respiration chamber (SRC-1 or compatible)
+- Charged EGM-4 battery pack
+- Computer running macOS, Windows, or Linux
+
+** Software
+- Python 3.10 or newer (comes with pip)
+- Git version control
+- Open-EGM4 software (https://github.com/mmorgans/open-egm4)
+
+** Optional but Recommended
+- Field notebook or weatherproof paper
+- Spare batteries
+- Serial port testing software (such as CoolTerm or screen)
+- GPS device for georeferencing plots
+
+* TL;DR
+
+1. Charge the EGM-4 and verify operation using the built-in screen
+2. Connect the device to your computer via serial cable
+3. Install and launch Open-EGM4 software
+4. Select the correct COM/serial port
+5. Put the EGM-4 into data output mode (press ~4~ then ~2~ on device)
+6. For live measurements: press ~1~ on device, record data in real-time
+7. For memory dump: press ~4~ then ~2~, retrieve stored measurements
+8. Export filtered data to CSV using the built-in export screen
+9. Disconnect and power down the EGM-4 properly
+
+* Understanding the EGM-4 Hardware
+
+** Device Overview
+
+The EGM-4 is a handheld IRGA with a backlit LCD screen, numeric keypad, and several physical ports. The device measures CO₂ concentration using infrared absorption, while connected probes provide temperature, relative humidity, and photosynthetically active radiation (PAR) measurements. Internal memory stores up to several thousand records organized by plot and record number.
+
+The device operates in several distinct modes:
+- *REC* (Record): Live measurement mode, streaming data to serial port
+- *DMP* (Dump): Memory dump mode, transmitting stored measurements
+- *SET* (Setup): Device configuration and calibration
+- *CAL* (Calibrate): Zero and span calibration procedures
+
+** Physical Connections
+
+*** Serial Port
+The DB-9 serial port on the side of the EGM-4 uses RS-232 signaling at 9600 baud, 8 data bits, no parity, 1 stop bit (8N1). The connection is *not* a standard serial cable: you need a null modem configuration where transmit and receive lines are crossed. Most USB-to-serial adapters will appear as =COM3= or higher on Windows, or =/dev/tty.usbserial-*= on macOS.
+
+Note: The EGM-4 does not implement hardware flow control. If your serial adapter defaults to requiring RTS/CTS, you must disable it or the connection will hang.
+
+*** Chamber and Probe Connections
+The EGM-4 has dedicated ports for soil chambers and environmental probes. The SRC-1 soil respiration chamber connects via a multi-pin circular connector and includes integrated temperature and PAR sensors. When the chamber is properly seated and sealed on soil, the EGM-4 automatically begins recording the CO₂ concentration increase over time.
+
+The probe must be firmly seated: a loose connection will cause intermittent sensor readings that appear as sudden dropouts in PAR or temperature readings.
+
+** Device Menu System
+
+Navigate the EGM-4 menu using the numeric keypad:
+- Press ~1~ to enter REC (Record/Measurement) mode
+- Press ~2~ to access SET (Setup) mode
+- Press ~3~ for CAL (Calibration) mode
+- Press ~4~ for DMP (Data Dump) mode
+- Press ~ENTER~ to confirm selections
+- Press ~ESC~ to go back one level
+
+The menu system is modal: you must exit one mode before entering another. For example, to switch from REC to DMP, you must press ~ESC~ to return to the main menu, then press ~4~.
+
+Note: The device will auto-sleep after 5 minutes of inactivity. Press any key to wake it. However, this sleep mode does *not* affect data collection when in REC mode with a chamber connected.
+
+* Legacy vs. Open-EGM4 Software
+
+** The Legacy Software
+
+PP Systems provides Windows-only software for the EGM-4 that runs on older operating systems. The interface uses dated UI patterns and requires manual COM port configuration. Data export is cumbersome: you must manually specify date ranges and output formats through nested dialog boxes.
+
+The legacy software is functional but has several limitations:
+- Windows XP/7 only; does not run reliably on Windows 10/11
+- No session persistence; closing the program loses all context
+- Limited export filtering (no plot-based filtering)
+- No real-time charting during memory dumps
+- Requires manual log file management
+
+If you must use the legacy software:
+1. Install on a Windows XP or 7 machine
+2. Connect the EGM-4 and identify the COM port in Device Manager
+3. Launch the PP Systems software and configure the COM port
+4. Select "Download Data" from the menu
+5. Choose date range and output file location
+6. Wait for download to complete (no progress indication)
+
+** The Open-EGM4 Software
+
+Open-EGM4 is a complete rewrite designed for modern operating systems, built as a terminal user interface (TUI) using Python. The software automatically detects serial ports, provides real-time data visualization, implements session persistence with SQLite, and offers advanced export filtering.
+
+Key improvements over legacy software:
+- Cross-platform: runs on macOS, Linux, and modern Windows
+- Automatic session resume: interrupted downloads continue seamlessly
+- Real-time plotting with multi-plot support
+- Smart export with plot and date filtering
+- Session persistence across restarts
+- Built-in device status indicators for warmup and zero checks
+
+** Why I Built Open-EGM4
+
+The legacy software became unusable when I upgraded to macOS, and running a Windows VM just to download data from a field device was absurd. I reverse-engineered the EGM-4's serial protocol by capturing data streams and analyzing the packet structure. The device transmits CSV-like records terminated by newlines, with a specific header format indicating data type (live measurement vs. memory record).
+
+I chose Python with the Textual TUI framework because:
+- Python has excellent serial port libraries (pyserial)
+- TUI interfaces work over SSH for remote field stations
+- The terminal approach is far lighter than a GUI
+- Cross-platform compatibility is built-in
+
+The entire application is ~2000 lines of Python, organized into modular screens (connect, monitor, export, chart) with a SQLite backend for persistence.
+
+* Complete EGM-4 Operation Guide
+
+** Initial Device Setup
+
+*** Charging the Battery
+The EGM-4 uses a rechargeable NiMH battery pack. Before field deployment:
+
+1. Locate the battery compartment on the back of the device
+2. Remove the battery pack if present
+3. Connect to the PP Systems wall charger
+4. Charge for at least 4 hours (overnight recommended)
+5. Verify charge by powering on: battery indicator should show full bars
+
+A fully charged battery will last 8-10 hours of continuous measurement in moderate temperatures. Cold weather (below 5°C) can reduce battery life by 30-40%.
+
+*** Warmup Procedure
+The IRGA requires thermal stabilization before accurate measurements. After powering on:
+
+1. Press any key to wake the device
+2. Wait for the warmup countdown (displayed on screen)
+3. Typical warmup is 5-10 minutes depending on ambient temperature
+
+The Open-EGM4 software displays warmup progress in the device status panel. Do not attempt measurements until warmup completes: readings will drift significantly.
+
+*** Zero Calibration
+Before each field session, perform a zero calibration:
+
+1. Ensure no chamber is connected
+2. Press ~3~ on the EGM-4 for CAL mode
+3. Press ~1~ for Zero calibration
+4. Expose the IRGA to ambient air (remove chamber, ensure clear airflow)
+5. Press ~ENTER~ to begin zero
+6. Wait for calibration to complete (20-30 seconds)
+
+The software shows zero check progress. Zero drift during measurements indicates IRGA contamination or optical path obstruction.
+
+** Connecting to Computer
+
+*** Physical Connection
+1. Power on the EGM-4 and complete warmup
+2. Connect the null modem RS-232 cable to the device
+3. Connect the USB-to-serial adapter to your computer
+4. Verify the connection appears in system devices
+
+On macOS, run =ls /dev/tty.usb*= to see available ports. On Windows, check Device Manager under "Ports (COM & LPT)". On Linux, run =dmesg | grep tty= after plugging in the adapter.
+
+*** Launching Open-EGM4
+Open a terminal and run:
+
+#+BEGIN_SRC bash
+open-egm4
+#+END_SRC
+
+The software launches into the Connect Screen showing:
+- Available serial ports (automatically detected)
+- Previous session list (if any exist)
+- Device connection status
+
+Use arrow keys to navigate the port list and press ~ENTER~ to connect.
+
+*** Troubleshooting Connection Issues
+If the software shows "No data received" after connecting:
+
+1. Verify the EGM-4 is powered on and not asleep
+2. Check that the serial cable is fully seated on both ends
+3. Ensure the EGM-4 is in data output mode (press ~4~ then ~2~)
+4. Try a different USB port or serial adapter
+5. Verify baud rate matches (9600 8N1)
+
+The COM port number may change when you unplug and replug the adapter. Always verify the port in the Connect Screen.
+
+Note: Some USB-to-serial adapters use counterfeit FTDI chips that cause driver conflicts on macOS. If the port appears but connection fails, try a different adapter.
+
+** Live Measurement Workflow
+
+*** Preparing for Field Measurements
+
+Before heading to the field:
+1. Charge the EGM-4 battery overnight
+2. Verify the SRC-1 chamber gasket is clean and undamaged
+3. Bring field notes, plot markers, and GPS if georeferencing
+4. Clear the EGM-4's memory if needed (or ensure sufficient space remains)
+
+*** Starting a Measurement Session
+
+1. Launch Open-EGM4 and connect to the serial port
+2. Press ~n~ in the Connect Screen to start a new session
+3. The Monitor Screen appears with an empty chart
+4. On the EGM-4, press ~1~ for REC mode
+5. Place the chamber on soil, ensuring a good seal
+
+The software immediately begins plotting CO₂ concentration over time. The device status panel shows "REAL-TIME" mode and updates with each measurement.
+
+*** Recording Measurements
+
+While the chamber is deployed:
+1. Monitor the chart: CO₂ should increase linearly
+2. Wait for 60-120 seconds depending on soil activity
+3. Press ~n~ in Open-EGM4 to add timestamped notes (e.g., "Plot 5 measurement 1")
+4. Lift the chamber when the measurement is complete
+5. Move to the next plot location
+
+The EGM-4 automatically increments record numbers. To change plots, press ~P~ on the device to increment the plot number.
+
+*** Managing Multiple Plots
+
+The software maintains separate chart series for each plot number. Use the plot filter (press number keys ~0~-~9~ in Monitor Screen) to toggle plot visibility. This allows comparison of multiple locations in real-time.
+
+To clear the chart without ending the session, press ~c~. This removes chart data but preserves measurements in the database.
+
+*** Pausing Data Collection
+
+To pause the data stream (e.g., while moving to new areas):
+- Press ~p~ in the software: this stops chart updates but continues logging
+- Or press ~ESC~ on the EGM-4 to exit REC mode
+
+Resume by pressing ~p~ again in software or re-entering REC mode on the device.
+
+** Memory Dump Workflow
+
+The EGM-4 can store measurements when not connected to a computer. This is useful for rapid field campaigns where real-time monitoring isn't practical.
+
+*** Standalone Field Collection
+
+1. Power on the EGM-4 and complete warmup
+2. Perform zero calibration
+3. Press ~1~ for REC mode
+4. Take measurements as normal (chamber placement, wait, lift, move)
+5. The device stores all records in internal memory
+6. Power off when finished
+
+The device memory is non-volatile: measurements persist even when powered off.
+
+*** Dumping Stored Data
+
+When you return from the field:
+
+1. Connect the EGM-4 to your computer via serial cable
+2. Launch Open-EGM4 and connect to the serial port
+3. On the EGM-4, press ~4~ for DMP mode
+4. Press ~2~ for DATA DUMP
+5. Press any key on the EGM-4 to start transmission
+
+The software displays "MEMORY DUMP" and shows download progress. The chart updates as each record arrives. Large datasets (1000+ records) can take 5-10 minutes to transfer.
+
+Note: The serial transmission is slow (9600 baud). Do not disconnect the cable during a dump: this corrupts the stream and requires restarting from the beginning.
+
+*** Clearing Device Memory
+
+After successfully dumping data:
+1. Verify all records are present in the software (check record count)
+2. Export data to CSV for backup
+3. On the EGM-4, enter SET mode (press ~2~)
+4. Navigate to "Clear Memory" option
+5. Confirm deletion
+
+Do not clear memory until you have verified the exported CSV contains all expected records. Once cleared, data is not recoverable.
+
+** Exporting Data
+
+*** Using the Export Screen
+
+Press ~e~ from the Monitor Screen to open the Export interface. The screen shows:
+- All available plots (with record counts)
+- Date range filter options
+- Preview of records to be exported
+- Destination filename
+
+Use arrow keys to navigate and toggle filters:
+- Select/deselect specific plots to include only certain locations
+- Set start and end dates to filter temporal ranges
+- Combined filters export only records matching both criteria
+
+The filename is auto-generated as =egm4_export_YYYYMMDD_HHMMSS.csv= but can be customized.
+
+Press ~ENTER~ to confirm export. The CSV file is written to the current working directory.
+
+*** CSV File Format
+
+Exported files contain one row per measurement with columns:
+
+- =session_id= - Unique session identifier
+- =timestamp= - ISO 8601 format timestamp
+- =type= - =M= (real-time) or =R= (memory)
+- =plot=, =record= - Plot and record numbers from device
+- =day=, =month=, =hour=, =minute= - Device timestamp components
+- =co2_ppm= - CO₂ concentration in parts per million
+- =h2o_mb= - Water vapor pressure in millibars
+- =temp_c= - Temperature in Celsius
+- =par= - Photosynthetically active radiation (μmol/m²/s)
+- =rh_pct= - Relative humidity percentage
+- =dc_ppm= - Change in CO₂ concentration
+- =dt_s= - Elapsed time in seconds
+- =sr_rate= - Calculated soil respiration rate
+- =atmp_mb= - Atmospheric pressure in millibars
+- =probe_type= - Probe identifier code
+
+This format is compatible with R, Python pandas, and Excel for downstream analysis.
+
+* Common Field Scenarios
+
+** Scenario 1: Multi-Plot Soil Respiration Survey
+
+You need to measure soil respiration at 20 plots across a field site, taking 3 replicate measurements per plot.
+
+*Procedure:*
+
+1. Launch Open-EGM4 and start a new session
+2. On the EGM-4, enter REC mode and ensure plot number is 1
+3. At first plot location, take 3 measurements with chamber repositioning between each
+4. Press ~P~ on EGM-4 to increment plot number to 2
+5. Move to next plot location and repeat
+6. Use plot filtering in software to verify measurements are attributed correctly
+7. Add timestamped notes for each plot (e.g., "Plot 5: north corner, shaded")
+8. After completing all plots, export data with all plots selected
+
+The software automatically separates measurements by plot number for downstream analysis.
+
+** Scenario 2: Long-Term Monitoring Without Computer
+
+You're deploying to a remote site without laptop access and need to collect data for later download.
+
+*Procedure:*
+
+1. Charge EGM-4 fully, bring spare batteries if available
+2. In the field, power on and perform zero calibration
+3. Enter REC mode (press ~1~ on device)
+4. Take measurements as normal; device stores all data internally
+5. Power off between measurement periods to conserve battery
+6. After returning, connect to computer and dump memory (press ~4~ then ~2~ on device)
+7. Verify all records downloaded by checking record count
+8. Export to CSV and clear device memory
+
+Note: The EGM-4 can store approximately 3500 records depending on configuration. Monitor memory usage in the device menu to avoid overflow.
+
+** Scenario 3: Interrupted Session Recovery
+
+Your computer crashes or battery dies mid-measurement session.
+
+*Procedure:*
+
+1. Restart the computer and launch Open-EGM4
+2. In the Connect Screen, select the previous session from the list
+3. Press ~ENTER~ to resume
+4. The software restores all previous measurements and charts
+5. Reconnect the serial port
+6. Continue data collection where you left off
+
+Session persistence uses SQLite: all measurements, notes, and plot data are automatically saved. The restored session shows exactly what was on screen before interruption.
+
+** Scenario 4: Device Warmup in Cold Weather
+
+You're working in sub-freezing conditions and the EGM-4 warmup takes longer than usual.
+
+*Procedure:*
+
+1. Power on the device indoors if possible
+2. Allow extended warmup time (up to 15 minutes in extreme cold)
+3. Monitor the warmup indicator in Open-EGM4 device status panel
+4. Keep the device insulated (in a pack or jacket) between measurements
+5. Perform zero calibration more frequently (every 30 minutes)
+6. Verify measurement stability by taking duplicate readings
+
+Cold temperatures affect battery performance and IRGA optical alignment. If readings drift significantly between replicates, allow additional warmup time.
+
+** Scenario 5: High Soil Respiration Rates
+
+You're measuring very active soil (e.g., freshly tilled agricultural land) with rapid CO₂ increase.
+
+*Procedure:*
+
+1. Reduce chamber deployment time to 30-45 seconds
+2. Monitor the chart in Open-EGM4: look for linear increase
+3. If CO₂ increases too rapidly (asymptotic curve), shorten deployment further
+4. Note the deployment time in software notes for accurate flux calculations
+5. Ensure chamber seal is airtight: leaks cause non-linear responses
+
+The linear phase of CO₂ increase is critical for accurate flux calculation. Non-linearity indicates chamber volume is too small for respiration rate, or leakage is occurring.
+
+* Troubleshooting
+
+** Device Shows "Err" or Strange Readings
+
+This indicates IRGA contamination or optical path obstruction.
+
+*Solution:*
+1. Power off the device
+2. Remove the optical cell cover (consult manual for location)
+3. Inspect mirrors and optical path for dust or moisture
+4. Clean with lens tissue and optical cleaner if needed
+5. Reassemble and perform zero calibration
+
+If error persists, the device requires factory service.
+
+** Software Shows Duplicate or Corrupted Data
+
+Rarely, electrical noise or poor serial connections cause garbled packets.
+
+*Solution:*
+1. Disconnect and reconnect the serial cable
+2. Try a different USB port or adapter
+3. Verify the cable is a null modem configuration
+4. Check for electromagnetic interference sources (motors, radios)
+
+The software automatically handles malformed packets but cannot reconstruct completely corrupted data.
+
+** Chamber Measurements Show No CO₂ Increase
+
+This suggests a sealing issue or non-active soil.
+
+*Solution:*
+1. Inspect the chamber gasket for damage or debris
+2. Ensure the chamber is pressed firmly into soil
+3. Verify soil moisture: very dry soil has minimal respiration
+4. Try an alternate location to rule out dead soil
+5. Check that the chamber is actually connected to the EGM-4
+
+On very active soil, CO₂ should increase within 10-15 seconds of chamber deployment.
+
+** Serial Port Not Detected
+
+The USB-to-serial adapter isn't recognized by the operating system.
+
+*Solution:*
+1. Verify the adapter is fully inserted
+2. Try a different USB port (avoid hubs if possible)
+3. Install manufacturer drivers for the adapter (FTDI, Prolific, CH340 chipsets)
+4. On macOS, check =ls /dev/tty.usb*= to verify device presence
+5. On Windows, check Device Manager for "Unknown Device" errors
+
+Some counterfeit USB-serial adapters require specific driver versions.
+
+** Battery Drains Quickly
+
+The device battery degrades over time and usage.
+
+*Solution:*
+1. Fully discharge and recharge the battery pack (conditioning cycle)
+2. Reduce screen brightness in device settings
+3. Power off between measurements when possible
+4. Consider a replacement battery pack (PP Systems part numbers in manual)
+
+NiMH batteries typically last 300-500 charge cycles before capacity degrades noticeably.
+
+* Advanced Topics
+
+** Understanding the Serial Protocol
+
+The EGM-4 transmits data as ASCII lines terminated by =\r\n= (carriage return + line feed). Each line contains comma-separated values matching the device's current mode.
+
+Example real-time measurement packet:
+#+BEGIN_EXAMPLE
+M,1,5,27,1,14,32,450.2,12.5,22.3,1200,65,5.2,15.0,0.35,1013.2,1
+#+END_EXAMPLE
+
+Fields are: type, plot, record, day, month, hour, minute, CO₂, H₂O, temp, PAR, RH, ΔCO₂, Δt, rate, pressure, probe.
+
+Memory dump packets have identical structure but type =R= instead of =M=.
+
+** Calculating Soil Respiration Flux
+
+The EGM-4 reports a calculated soil respiration rate (=sr_rate= column), but you can verify or recalculate:
+
+\[
+F = \frac{\Delta CO_2}{\Delta t} \times \frac{V}{A} \times \frac{P}{RT}
+\]
+
+Where:
+- \(F\) = CO₂ flux (μmol/m²/s)
+- \(\Delta CO_2 / \Delta t\) = rate of concentration change
+- \(V\) = chamber volume (m³)
+- \(A\) = chamber area (m²)
+- \(P\) = atmospheric pressure (Pa)
+- \(R\) = gas constant (8.314 J/mol/K)
+- \(T\) = temperature (K)
+
+For the SRC-1 chamber, \(V/A = 0.991\) L (height of chamber).
+
+** Customizing the Software
+
+Open-EGM4 is open source under the MIT license. To modify behavior:
+
+1. Clone the repository: =git clone https://github.com/mmorgans/open-egm4=
+2. Install in development mode: =pip install -e .=
+3. Edit source files in =src/= directory
+4. Run directly: =python main.py=
+
+Key files:
+- =src/serial_handler.py= - Serial port communication and data parsing
+- =src/tui/screens/monitor.py= - Main measurement screen UI and charting
+- =src/database.py= - SQLite schema and data persistence
+- =src/tui/screens/export.py= - Export filtering and CSV generation
+
+Pull requests for bug fixes and feature improvements are welcome.
+
+* Conclusion
+
+The EGM-4 is a robust field instrument when properly operated. Understanding the device's menu system, maintaining good serial connections, and using appropriate software (Open-EGM4) ensures reliable data collection. Always verify exported data immediately after field sessions, maintain regular calibration schedules, and keep spare batteries for extended campaigns.
+
+For additional support:
+- Open-EGM4 issues: https://github.com/mmorgans/open-egm4/issues
+- PP Systems technical support: https://ppsystems.com/support
+- EGM-4 user manual: included with device or available from PP Systems

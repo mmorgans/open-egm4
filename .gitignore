@@ -10,6 +10,10 @@ EGM4-chamber-manual.pdf
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# Scratch/temporary files
+Untitled-*
+## *
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
