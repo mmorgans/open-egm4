@@ -17,7 +17,39 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Installation
 
-### Quick Install
+### For Beginners
+
+If you've never used the terminal or command line before, follow these steps:
+
+#### Step 1: Check if Python is Installed
+
+Open the terminal:
+- **Windows**: Press the little icon on the bottom part of your screen that has the four squares on it. In the search box (with the magnifying glass! :) ) type "cmd", and press Enter.
+- **macOS**: `cmd + space`, type "Terminal", and press Enter.
+- **Linux**: You know what to do already.
+
+Type this command and press Enter:
+```bash
+python3 --version
+```
+
+If you see something like `Python 3.10.0` or higher, you're good. If not, install Python from [python.org/downloads](https://www.python.org/downloads/).
+
+#### Step 2: Install Git
+
+Check if git is installed:
+```bash
+git --version
+```
+
+If you see a version number, you're good. If not, install git:
+- **macOS**: Install [Homebrew](https://brew.sh/), then run `brew install git`
+- **Windows**: Download from [git-scm.com](https://git-scm.com/)
+- **Linux**: Come on, you know this.
+
+#### Step 3: Download and Install Open-EGM4
+
+In the terminal, run these commands one at a time:
 
 ```bash
 git clone https://github.com/mmorgans/open-egm4
@@ -25,12 +57,21 @@ cd open-egm4
 pip install .
 ```
 
-Then run from anywhere:
+Explanation:
+- `git clone` downloads the code
+- `cd open-egm4` moves into the downloaded folder
+- `pip install .` installs the program
+
+#### Step 4: Run the Program
+
+From any terminal window:
 ```bash
 open-egm4
 ```
 
-### Development Install
+### For Developers
+
+If you want to modify the code:
 
 ```bash
 git clone https://github.com/mmorgans/open-egm4
@@ -73,11 +114,11 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 | Key | Action |
 |-----|--------|
-| `Q` | Quit and save data automatically |
-| `E` | Export to CSV with plot and date filters |
-| `C` | Clear chart data |
-| `P` | Pause or resume data stream |
-| `N` | Add timestamped note to log |
+| `q` | Quit and save data automatically |
+| `e` | Export to CSV with plot and date filters |
+| `c` | Clear chart data |
+| `p` | Pause or resume data stream |
+| `n` | Add timestamped note to log |
 | `?` | Help screen |
 
 ### Chart Controls
@@ -95,25 +136,20 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 |-----|--------|
 | `↑` / `↓` | Navigate port or session list |
 | `Enter` | Connect to port or resume session |
-| `N` | Start new session |
-| `Q` | Quit |
+| `n` | Start new session |
+| `q` | Quit |
 
 ## EGM-4 Device Operation
 
 ### Dumping Stored Data
 
-1. Press `4` on the EGM-4 for Data Output
-2. Press `2` for RS232
+1. Press `4` on the EGM-4 for DMP
+2. Press `2` for DATA DUMP
 3. Press any key to start dump
-
-The app will display "MEMORY DUMP" and show download progress.
 
 ### Live Measurements
 
-1. Press `1` on the EGM-4 for Measurement
-2. Data streams in real-time
-
-The app will display "REAL-TIME" mode indicator.
+1. Press `1` on the EGM-4 for REC.
 
 ### Device Warmup
 
@@ -139,9 +175,9 @@ The exported CSV includes all fields from the EGM-4 record format:
 - `type` - M for real-time or R for memory
 - `plot`, `record` - Plot and record numbers
 - `day`, `month`, `hour`, `minute` - Device timestamp
-- `co2_ppm`, `h2o_mb`, `temp_c` - Core IRGA readings
-- `par`, `rh_pct` - Probe measurements for SRC-1
-- `dc_ppm`, `dt_s`, `sr_rate` - Delta CO₂ and respiration rate
+- `co2_ppm`, `h2o_mb`, `temp_c` - IRGA readings
+- `par`, `rh_pct` - Probe measurements
+- `dc_ppm`, `dt_s`, `sr_rate` - Change in CO₂ and respiration rate
 - `atmp_mb`, `probe_type` - Atmospheric pressure and probe code
 
 ## License
