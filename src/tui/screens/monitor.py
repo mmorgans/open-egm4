@@ -19,6 +19,7 @@ from src.tui.widgets.legend import ChannelLegend
 from src.egm_interface import EGM4Serial
 from src.tui.screens.bigmode import BigModeScreen
 from src.tui.screens.help import HelpScreen
+from src.tui.screens.confirm import ConfirmScreen
 from src.database import DatabaseHandler
 from src.analysis import FluxCalculator
 import time
@@ -54,11 +55,7 @@ class MonitorScreen(Screen):
         ("7", "select_slot('7')", None),
         ("8", "select_slot('8')", None),
         ("9", "select_slot('9')", None),
-        # Span control - hidden from footer (shown in legend)
-        ("=", "increase_span", None),
-        ("+", "increase_span", None),
-        ("-", "decrease_span", None),
-        ("_", "decrease_span", None),
+
         # Plot cycling - hidden from footer
         ("comma", "prev_plot", None),
         ("full_stop", "next_plot", None),
@@ -95,6 +92,7 @@ class MonitorScreen(Screen):
         self.raw_log_file = None
         self._warmup_logged = False  # Track if warmup message was shown
         self._zero_logged = False  # Track if zero check message was shown
+        self._disconnect_logged = False  # Track if disconnect was already logged
         self.db = db_handler
         self.session_id: int | None = resume_session_id
         self._is_resuming = resume_session_id is not None
@@ -260,14 +258,19 @@ class MonitorScreen(Screen):
             # Port disappeared - USB unplugged
             if stats.is_connected:
                 stats.is_connected = False
-                log = self.query_one("#log", LogWidget)
-                log.log_error(f"USB disconnected: {self.port}")
+                # Only log disconnect once
+                if not self._disconnect_logged:
+                    log = self.query_one("#log", LogWidget)
+                    log.log_error(f"USB disconnected: {self.port}")
+                    self._disconnect_logged = True
         else:
             # Port present
             if not stats.is_connected:
                 stats.is_connected = True
                 log = self.query_one("#log", LogWidget)
                 log.log_success(f"USB reconnected: {self.port}")
+                # Reset disconnect flag for next time
+                self._disconnect_logged = False
 
     async def on_unmount(self) -> None:
         """Clean up when screen unmounts."""
@@ -536,14 +539,26 @@ class MonitorScreen(Screen):
         self.app.exit()
 
     def action_clear(self) -> None:
-        """Clear all data."""
-        self.query_one("#chart", CO2PlotWidget).clear_data()
-        self.query_one("#stats", StatsWidget).clear_history()
-        self.query_one("#log", LogWidget).clear()
-        # Update legend to reflect cleared plots
-        legend = self.query_one("#legend", ChannelLegend)
-        chart = self.query_one("#chart", CO2PlotWidget)
-        legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
+        """Clear all data after confirmation."""
+        def handle_clear_confirmation(confirmed: bool) -> None:
+            if confirmed:
+                self.query_one("#chart", CO2PlotWidget).clear_data()
+                self.query_one("#stats", StatsWidget).clear_history()
+                self.query_one("#log", LogWidget).clear()
+                # Update legend to reflect cleared plots
+                legend = self.query_one("#legend", ChannelLegend)
+                chart = self.query_one("#chart", CO2PlotWidget)
+                legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
+                self.app.notify("Data cleared", severity="information")
+        
+        self.app.push_screen(
+            ConfirmScreen(
+                title="Clear All Data?",
+                message="This will clear all chart data, statistics, and logs.\nThis action cannot be undone."
+            ),
+            handle_clear_confirmation
+        )
+
 
     def action_pause(self) -> None:
         """Toggle pause state."""
@@ -620,19 +635,7 @@ class MonitorScreen(Screen):
         self._select_channel("dt")
 
     # Span control actions
-    def action_increase_span(self) -> None:
-        """Increase chart time span."""
-        chart = self.query_one("#chart", CO2PlotWidget)
-        legend = self.query_one("#legend", ChannelLegend)
-        chart.increase_span()
-        legend.set_span(int(chart.view_span))
 
-    def action_decrease_span(self) -> None:
-        """Decrease chart time span."""
-        chart = self.query_one("#chart", CO2PlotWidget)
-        legend = self.query_one("#legend", ChannelLegend)
-        chart.decrease_span()
-        legend.set_span(int(chart.view_span))
 
     def action_help(self) -> None:
         """Show the help screen."""

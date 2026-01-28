@@ -1,6 +1,7 @@
 import csv
 import os
 from datetime import datetime, date, timedelta
+from pathlib import Path
 from typing import List, Set
 
 from textual import on
@@ -117,10 +118,12 @@ class ExportScreen(ModalScreen):
             yield Static("", id="plot-status", classes="info")
             yield Static("", id="date-status", classes="info")
 
-            # Actions section
-            yield Static("Actions", classes="section")
-            yield Static("  [b]e[/]  Export Now", classes="info")
-            yield Static("  [b]q[/]  Cancel", classes="info")
+            # Instructions section
+            yield Static("Instructions", classes="section")
+            yield Static("  Press [b]p[/] to select/deselect plots", classes="info")
+            yield Static("  Press [b]d[/] to select/deselect dates", classes="info")
+            yield Static("  Press [b]e[/] to export with current filters", classes="info")
+            yield Static("  Press [b]q[/] to cancel", classes="info")
 
             # Selection containers
             with Vertical(id="plot-container"):
@@ -131,6 +134,7 @@ class ExportScreen(ModalScreen):
 
             # Helper text
             yield Static("", id="helper")
+
 
     def on_mount(self) -> None:
         # Initialize Plot List
@@ -242,6 +246,7 @@ class ExportScreen(ModalScreen):
         """Handle keyboard shortcuts."""
         if self.mode == "MENU":
             if event.key in ("q", "escape"):
+                event.stop()  # Prevent propagation to parent (which would quit app)
                 self.dismiss()
             elif event.key == "e":
                 self.export_data()
@@ -283,6 +288,10 @@ class ExportScreen(ModalScreen):
 
     def export_data(self) -> None:
         """Export filtered data to CSV."""
+        # Log export for debugging spurious export reports
+        import logging
+        logging.info(f"Export initiated: {len(self.recorded_data)} total records")
+        
         # Filter data
         filtered_data = [row for row in self.recorded_data if self._should_include(row)]
 
@@ -307,6 +316,15 @@ class ExportScreen(ModalScreen):
                 date_part = f"_{dates[0].isoformat()}to{dates[-1].isoformat()}"
 
         filename = f"egm4{plot_part}{date_part}_{timestamp}.csv"
+        
+        # Determine export directory: Downloads folder or current directory
+        downloads_dir = Path.home() / "Downloads"
+        if downloads_dir.exists() and downloads_dir.is_dir():
+            export_path = downloads_dir / filename
+            location_note = "Downloads"
+        else:
+            export_path = Path(filename)
+            location_note = "current directory"
 
         try:
             headers = [
@@ -317,16 +335,16 @@ class ExportScreen(ModalScreen):
                 'dc_ppm', 'dt_s', 'sr_rate'
             ]
 
-            with open(filename, 'w', newline='') as f:
+            with open(export_path, 'w', newline='') as f:
                 writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
                 writer.writeheader()
                 writer.writerows(filtered_data)
 
             # Success
-            file_size = os.path.getsize(filename)
+            file_size = os.path.getsize(export_path)
             size_str = f"{file_size / 1024:.1f} KB" if file_size >= 1024 else f"{file_size} bytes"
             self.app.notify(
-                f"✓ Exported {len(filtered_data)} records to {filename} ({size_str})",
+                f"✓ Exported {len(filtered_data)} records to {location_note}/{filename} ({size_str})",
                 severity="information",
                 timeout=5
             )

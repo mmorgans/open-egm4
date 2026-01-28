@@ -4,19 +4,29 @@ version = "1.0.0"
 description = "Terminal User Interface for the PP Systems EGM-4 Environmental Gas Monitor"
 readme = "README.md"
 license = {text = "MIT"}
+authors = [
+    {name = "Morgan", email = "morgans@example.com"}
+]
 requires-python = ">=3.10"
-keywords = ["egm4", "co2", "soil respiration", "tui", "serial"]
+keywords = ["egm4", "co2", "soil respiration", "tui", "serial", "environmental monitoring", "irga"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
+    "Environment :: Console :: Curses",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: System :: Monitoring",
 ]
 dependencies = [
     "textual>=0.40.0",

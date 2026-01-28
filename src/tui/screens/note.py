@@ -67,3 +67,9 @@ class NoteInputScreen(ModalScreen[str]):
             
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value)
+    
+    def on_key(self, event) -> None:
+        """Handle 'q' to dismiss without quitting app."""
+        if event.key == "q":
+            event.stop()  # Prevent propagation
+            self.dismiss(None)

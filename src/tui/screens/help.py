@@ -28,7 +28,6 @@ HELP_TEXT = """
 [bold yellow]▶ KEYBOARD SHORTCUTS[/bold yellow]
 
 [bold cyan]1-9[/bold cyan]     Select channel to display (Cr, Hr, PAR, etc.)
-[bold cyan]= / -[/bold cyan]   Increase / Decrease chart time span
 [bold cyan]p[/bold cyan]       Pause/Resume data stream
 [bold cyan]c[/bold cyan]       Clear chart data
 [bold cyan]e[/bold cyan]       Export data to CSV file
@@ -139,3 +138,10 @@ class HelpScreen(ModalScreen):
     def action_secret_help(self) -> None:
         """Open the secret help screen."""
         self.app.push_screen(SecretHelpScreen())
+    
+    def on_key(self, event) -> None:
+        """Handle 'q' to dismiss without quitting app."""
+        if event.key == "q":
+            event.stop()  # Prevent propagation
+            self.dismiss()
+

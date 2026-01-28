@@ -17,14 +17,28 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Installation
 
-### For Beginners
+### Quick Install (macOS Recommended)
 
-If you've never used the terminal or command line before, follow these steps:
+The easiest way to install properly is using `pipx`. Open your terminal (Cmd+Space, type "Terminal") and run these two commands:
+
+```bash
+brew install pipx
+pipx install git+https://github.com/mmorgans/open-egm4
+```
+
+Then just run it:
+```bash
+open-egm4
+```
+
+### Manual Installation (Windows / Linux / Detailed)
+
+If the above doesn't work, or you are on Windows, follow these steps:
 
 #### Step 1: Check if Python is Installed
 
 Open the terminal:
-- **Windows**: Press the little icon on the bottom part of your screen that has the four squares on it. In the search box (with the magnifying glass! :) ) type "cmd", and press Enter.
+- **Windows**: Press the Start button, type "cmd", and press Enter.
 - **macOS**: `cmd + space`, type "Terminal", and press Enter.
 - **Linux**: You know what to do already.
 
@@ -44,8 +58,7 @@ git --version
 
 If you see a version number, you're good. If not, install git:
 - **macOS**: Install [Homebrew](https://brew.sh/), then run `brew install git`
-- **Windows**: Download from [git-scm.com](https://git-scm.com/)
-- **Linux**: Come on, you know this.
+- **Windows**: Download from [git-scm.com](https://git-scm.com/) (Standard install is fine)
 
 #### Step 3: Download and Install Open-EGM4
 
@@ -88,6 +101,32 @@ open-egm4
 ./venv/bin/python main.py
 ```
 
+### Installation Troubleshooting
+
+#### macOS: "python: command not found"
+
+On macOS, use `python3` and `pip3` instead of `python` and `pip`:
+
+```bash
+python3 --version
+pip3 install .
+```
+
+#### macOS: "pip: command not found"
+
+If pip isn't installed, run this to install it:
+
+```bash
+python3 -m ensurepip --upgrade
+```
+
+Alternatively, install Python via Homebrew which includes pip:
+
+```bash
+brew install python@3.13
+```
+
+
 ## Platform Notes
 
 ### Linux
@@ -125,8 +164,6 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 | Key | Action |
 |-----|--------|
-| `+` / `=` | Increase time span, zoom out |
-| `-` / `_` | Decrease time span, zoom in |
 | `.` / `>` | Next plot |
 | `,` / `<` | Previous plot |
 

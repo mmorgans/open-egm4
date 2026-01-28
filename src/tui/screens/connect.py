@@ -30,10 +30,12 @@ def find_best_port() -> str | None:
     """
     Auto-detect the most likely EGM-4 port.
     
+    Returns only USB serial devices to avoid connecting to Bluetooth or other ports.
+    Returns None if no USB serial device is found.
+    
     Priority:
     1. USB serial devices (cu.usbserial, ttyUSB, etc.)
-    2. COM1 on Windows
-    3. First available port
+    2. COM1-COM9 on Windows (commonly used for USB-serial adapters)
     """
     ports = list_ports.comports()
     
@@ -52,13 +54,15 @@ def find_best_port() -> str | None:
         if any(chip in desc_lower for chip in ['ftdi', 'prolific', 'ch340', 'cp210']):
             return port.device
     
-    # Priority 2: COM1 on Windows
+    # Priority 2: COM1-COM9 on Windows (USB-serial adapters)
     for port in ports:
-        if port.device.upper() == 'COM1':
+        device_upper = port.device.upper()
+        if device_upper.startswith('COM') and len(device_upper) == 4 and device_upper[3].isdigit():
+            # COM1-COM9 are likely USB-serial adapters
             return port.device
     
-    # Priority 3: First available port
-    return ports[0].device
+    # Don't fall back to first available port - avoid Bluetooth etc.
+    return None
 
 
 class ConnectScreen(Screen):
@@ -206,17 +210,14 @@ class ConnectScreen(Screen):
         """Populate port list and start auto-connect countdown."""
         self.refresh_ports()
         
-        # Check for previous session - just to see if we should show hint
-        # Logic moved to help-text visibility if needed, but for now we always show prompt
-        
+        # Only auto-connect if we found a USB serial device
         best_port = find_best_port()
         if best_port:
             self._start_countdown()
         else:
+            # No USB serial device - clear countdown, user must select manually
             self.query_one("#countdown", Static).update("")
-            self.query_one("#status", Static).update(
-                "No USB serial device detected - select a port manually"
-            )
+
 
     def action_handle_resume(self) -> None:
         """Handle resume key press."""
