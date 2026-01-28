@@ -29,7 +29,7 @@ Or using [pipx](https://github.com/pypa/pipx) (recommended for isolated environm
 pipx install git+https://github.com/mmorgans/open-egm4
 ```
 
-> **For Beginners**: If you are new to the terminal or don't have Python installed, please see our **[Detailed Installation Guide](egm4-guide.org)** for step-by-step instructions.
+> **For Beginners**: If you are new to the terminal or don't have Python installed, I wrote a much more detailed guide on the EGM-4 and this software, available here.
 
 ### For Developers
 
