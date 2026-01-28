@@ -1,7 +1,7 @@
 # manuals for the EGM-4 for reference
 EGM4-manual.pdf
 EGM4-chamber-manual.pdf
-
+egm4-guide.org
 # csv files that are exported from the EGM-4
 *.csv
 *.log

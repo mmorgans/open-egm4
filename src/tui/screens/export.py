@@ -318,13 +318,17 @@ class ExportScreen(ModalScreen):
         filename = f"egm4{plot_part}{date_part}_{timestamp}.csv"
         
         # Determine export directory: Downloads folder or current directory
-        downloads_dir = Path.home() / "Downloads"
-        if downloads_dir.exists() and downloads_dir.is_dir():
-            export_path = downloads_dir / filename
-            location_note = "Downloads"
-        else:
-            export_path = Path(filename)
-            location_note = "current directory"
+        # Force absolute path resolution
+        try:
+            downloads_dir = (Path.home() / "Downloads").resolve()
+            if downloads_dir.exists() and downloads_dir.is_dir():
+                export_path = downloads_dir / filename
+            else:
+                # Fallback to current working directory
+                export_path = Path.cwd() / filename
+        except Exception:
+            # Fallback if any path resolution fails
+            export_path = Path.cwd() / filename
 
         try:
             headers = [
@@ -343,10 +347,13 @@ class ExportScreen(ModalScreen):
             # Success
             file_size = os.path.getsize(export_path)
             size_str = f"{file_size / 1024:.1f} KB" if file_size >= 1024 else f"{file_size} bytes"
+            
+            # Show FULL RESOLVED PATH in notification
             self.app.notify(
-                f"✓ Exported {len(filtered_data)} records to {location_note}/{filename} ({size_str})",
+                f"Saved to: {export_path}",
+                title="Export Success",
                 severity="information",
-                timeout=5
+                timeout=10
             )
             self.dismiss()
 

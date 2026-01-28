@@ -33,6 +33,47 @@ The PP Systems EGM-4 is a portable infrared gas analyzer (IRGA) designed for mea
 - Serial port testing software (such as CoolTerm or screen)
 - GPS device for georeferencing plots
 
+* Software Installation Guide
+
+** Method 1: The Easiest Way (For Absolute Beginners)
+
+*** Step 1: Install Python
+If you don't have Python installed (or aren't sure):
+
+1. Go to [[https://www.python.org/downloads/]]
+2. Download the latest version for your computer
+3. **Run the installer**:
+   - *Windows Users:* Check the box **"Add Python to PATH"** before clicking Install!
+   - *macOS Users:* After installation, open your Applications folder -> Python 3.x folder -> double-click **"Install Certificates.command"**
+
+*** Step 2: Open the Terminal
+- *macOS:* Press ~Cmd + Space~, type "Terminal", and press Enter.
+- *Windows:* Open Start Menu, type "cmd", and press Enter.
+
+*** Step 3: Run the Install Command
+Copy and paste this single line into the terminal and press Enter:
+
+#+BEGIN_SRC bash
+python3 -m pip install git+https://github.com/mmorgans/open-egm4
+#+END_SRC
+
+*(Note: On Windows, if python3 gives an error, just type python instead)*
+
+*** Step 4: Run the App
+Type this and press Enter:
+
+#+BEGIN_SRC bash
+open-egm4
+#+END_SRC
+
+** Method 2: Advanced Users (Developers/Pipx)
+
+If you are comfortable with command line tools, use `pipx` for a clean, isolated installation:
+
+#+BEGIN_SRC bash
+pipx install git+https://github.com/mmorgans/open-egm4
+#+END_SRC
+
 * TL;DR
 
 1. Charge the EGM-4 and verify operation using the built-in screen

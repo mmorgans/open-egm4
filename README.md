@@ -17,70 +17,19 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Installation
 
-### Quick Install (macOS Recommended)
-
-The easiest way to install properly is using `pipx`. Open your terminal (Cmd+Space, type "Terminal") and run these two commands:
+Install directly from GitHub using pip:
 
 ```bash
-brew install pipx
+pip install git+https://github.com/mmorgans/open-egm4
+```
+
+Or using [pipx](https://github.com/pypa/pipx) (recommended for isolated environments):
+
+```bash
 pipx install git+https://github.com/mmorgans/open-egm4
 ```
 
-Then just run it:
-```bash
-open-egm4
-```
-
-### Manual Installation (Windows / Linux / Detailed)
-
-If the above doesn't work, or you are on Windows, follow these steps:
-
-#### Step 1: Check if Python is Installed
-
-Open the terminal:
-- **Windows**: Press the Start button, type "cmd", and press Enter.
-- **macOS**: `cmd + space`, type "Terminal", and press Enter.
-- **Linux**: You know what to do already.
-
-Type this command and press Enter:
-```bash
-python3 --version
-```
-
-If you see something like `Python 3.10.0` or higher, you're good. If not, install Python from [python.org/downloads](https://www.python.org/downloads/).
-
-#### Step 2: Install Git
-
-Check if git is installed:
-```bash
-git --version
-```
-
-If you see a version number, you're good. If not, install git:
-- **macOS**: Install [Homebrew](https://brew.sh/), then run `brew install git`
-- **Windows**: Download from [git-scm.com](https://git-scm.com/) (Standard install is fine)
-
-#### Step 3: Download and Install Open-EGM4
-
-In the terminal, run these commands one at a time:
-
-```bash
-git clone https://github.com/mmorgans/open-egm4
-cd open-egm4
-pip install .
-```
-
-Explanation:
-- `git clone` downloads the code
-- `cd open-egm4` moves into the downloaded folder
-- `pip install .` installs the program
-
-#### Step 4: Run the Program
-
-From any terminal window:
-```bash
-open-egm4
-```
+> **For Beginners**: If you are new to the terminal or don't have Python installed, please see our **[Detailed Installation Guide](egm4-guide.org)** for step-by-step instructions.
 
 ### For Developers
 
