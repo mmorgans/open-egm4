@@ -17,17 +17,33 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Installation
 
-Install directly from GitHub using pip:
+## Installation
+
+The easiest way to install Open-EGM4 is using the automatic installer:
 
 ```bash
+curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh | bash
+```
+
+After installation, simply run:
+
+```bash
+open-egm4
+```
+
+### Manual Installation
+
+If you prefer to install manually, you can use `pipx` (recommended) or `pip`:
+
+```bash
+# Using pipx (recommended for isolation)
+pipx install git+https://github.com/mmorgans/open-egm4
+
+# Using standard pip
 pip install git+https://github.com/mmorgans/open-egm4
 ```
 
-Or using [pipx](https://github.com/pypa/pipx) (recommended for isolated environments):
-
-```bash
-pipx install git+https://github.com/mmorgans/open-egm4
-```
+> **Note:** If the `open-egm4` command is not found after manual installation, ensure your python bin directory is in your PATH, or run using `python3 -m src.tui.app`.
 
 > **For Beginners**: If you are new to the terminal or don't have Python installed, I wrote a much more detailed guide on the EGM-4 and this software, available here.
 
@@ -42,6 +58,7 @@ python -m venv venv
 source venv/bin/activate  # On Windows: venv\\Scripts\\activate
 pip install -e .
 ```
+
 
 Run with:
 ```bash
