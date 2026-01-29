@@ -25,6 +25,7 @@ class LogWidget(RichLog):
             highlight=True,
             markup=True,
         )
+        self.can_focus = False
         # Download counter state
         self._download_count: int = 0
         self._download_line_id: str | None = None
