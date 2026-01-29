@@ -2,6 +2,7 @@ import asyncio
 import logging
 import serial
 import serial.tools.list_ports
+import errno
 from typing import Optional, Protocol, Callable, Any
 
 # Protocol definition for what a "Serial Port" looks like to our app
@@ -124,6 +125,23 @@ class EGM4Serial:
                         if self.data_callback:
                             self.data_callback(record, parsed)
                             
+            except OSError as e:
+                # Handle specific disconnect errors to avoid log spam
+                # Errno 6: Device not configured (macOS)
+                # Errno 5: Input/output error (Linux/some cases)
+                if e.errno == 6 or e.errno == errno.EIO or "Device not configured" in str(e):
+                    if self.running:
+                        logging.warning(f"Serial connection lost: {e}")
+                        self.running = False
+                        break
+                
+                # Other OSErrors
+                if self.running:
+                    logging.error(f"Serial I/O error: {e}")
+                    if self.error_callback:
+                        self.error_callback(str(e))
+                    await asyncio.sleep(0.5)
+
             except Exception as e:
                 # Only log/sleep if we're still running (not shutting down)
                 if self.running:

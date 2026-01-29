@@ -258,23 +258,46 @@ class ExportScreen(ModalScreen):
                 self.refresh_display()
 
         elif self.mode == "PLOT":
-            if event.key in ("p", "escape"):
-                # Save and exit
+            if event.key == "q":
+                event.stop()
+                self.dismiss()
+            elif event.key in ("p", "escape", "enter"):
+                # Save and exit back to menu
                 self.selected_plots = set(self.query_one("#plot-list", SelectionList).selected)
                 self.mode = "MENU"
                 self.refresh_display()
+
+            elif event.key == "e":
+                # Save selection then export
+                self.selected_plots = set(self.query_one("#plot-list", SelectionList).selected)
+                self.mode = "MENU"
+                self.refresh_display()
+                self.export_data()
+
             elif event.key == "a":
                 self.query_one("#plot-list", SelectionList).select_all()
             elif event.key == "n":
                 self.query_one("#plot-list", SelectionList).deselect_all()
 
         elif self.mode == "DATE":
-            if event.key in ("d", "escape"):
-                # Save and exit
+            if event.key == "q":
+                event.stop()
+                self.dismiss()
+            elif event.key in ("d", "escape", "enter"):
+                # Save and exit back to menu
                 selected = self.query_one("#date-list", SelectionList).selected
                 self.selected_dates = set(selected) if selected else set()
                 self.mode = "MENU"
                 self.refresh_display()
+                
+            elif event.key == "e":
+                 # Save selection then export
+                selected = self.query_one("#date-list", SelectionList).selected
+                self.selected_dates = set(selected) if selected else set()
+                self.mode = "MENU"
+                self.refresh_display()
+                self.export_data()
+
             elif event.key == "a":
                 self.query_one("#date-list", SelectionList).select_all()
             elif event.key == "n":

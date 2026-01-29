@@ -271,6 +271,12 @@ class MonitorScreen(Screen):
                 log.log_success(f"USB reconnected: {self.port}")
                 # Reset disconnect flag for next time
                 self._disconnect_logged = False
+                
+                # Check if the reader loop died (expected behavior now on disconnect)
+                # If so, restart it
+                if self.serial and not getattr(self.serial, 'running', False):
+                    log.log_info("Restarting data stream...")
+                    self.start_serial_reading()
 
     async def on_unmount(self) -> None:
         """Clean up when screen unmounts."""
