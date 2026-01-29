@@ -7,9 +7,25 @@ from textual.app import ComposeResult
 from textual.containers import Center, Vertical
 from textual.message import Message
 from textual.screen import Screen, ModalScreen
-from textual.widgets import Button, Footer, Header, OptionList, Static
+from textual.widgets import Button, Footer, Header, OptionList, Static, Label
 from textual.widgets.option_list import Option
 from serial.tools import list_ports
+import importlib.metadata
+
+def get_app_version() -> str:
+    """Retrieve app version from package metadata or local file."""
+    try:
+        # Try retrieving installed package version
+        return f"v{importlib.metadata.version('open-egm4')}"
+    except importlib.metadata.PackageNotFoundError:
+        pass
+        
+    try:
+        # Try retrieving local version file (written by setuptools_scm)
+        from src.version import version
+        return f"v{version}"
+    except ImportError:
+        return "dev"
 
 
 # ASCII art logo
@@ -195,6 +211,7 @@ class ConnectScreen(Screen):
         with Center():
             with Vertical(id="config-container"):
                 yield Static(LOGO, id="logo")
+                yield Label(get_app_version(), classes="version-label")
                 yield Static("Select Serial Port", classes="config-label")
                 yield OptionList(id="port-list")
                 

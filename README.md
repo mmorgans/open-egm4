@@ -19,7 +19,7 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 ## Installation
 
-The easiest way to install Open-EGM4 is using the automatic installer:
+The easiest way to install or update Open-EGM4 is using the automatic installer:
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh | bash
@@ -30,6 +30,7 @@ After installation, simply run:
 ```bash
 open-egm4
 ```
+
 
 ### Manual Installation
 

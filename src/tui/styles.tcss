@@ -21,6 +21,13 @@ ConnectScreen {
 ConnectScreen #logo {
     text-align: center;
     color: $primary;
+    margin-bottom: 0;
+}
+
+ConnectScreen .version-label {
+    width: 100%;
+    text-align: center;
+    color: $text-muted;
     margin-bottom: 1;
 }
 

@@ -1,6 +1,6 @@
 [project]
 name = "open-egm4"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Terminal User Interface for the PP Systems EGM-4 Environmental Gas Monitor"
 readme = "README.md"
 license = {text = "MIT"}
@@ -42,8 +42,11 @@ Homepage = "https://github.com/mmorgans/open-egm4"
 Repository = "https://github.com/mmorgans/open-egm4"
 
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "src/version.py"
 
 [tool.setuptools.packages.find]
 where = ["."]
