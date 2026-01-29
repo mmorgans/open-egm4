@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """
-Open EGM-4 - Entry Point
-
-A professional terminal interface for the PP Systems EGM-4 Environmental Gas Monitor.
-
-Usage:
-    ./venv/bin/python main.py
+He he he yup
 """
 
 from src.tui.app import main
