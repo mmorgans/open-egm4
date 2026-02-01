@@ -28,7 +28,7 @@ After installation, simply run:
 ```bash
 open-egm4
 ```
-
+If you want more information on this project and the EGM-4 itself, or need more detailed installation instructions, see [the article I wrote here](https://docs.mor-gan.com/posts/using-the-egm-4/).
 
 ### Manual Installation
 
@@ -44,7 +44,7 @@ pip install git+https://github.com/mmorgans/open-egm4
 
 > If the `open-egm4` command is not found after manual installation, ensure your python bin directory is in your PATH, or run using `python3 -m src.tui.app`.
 
-> If you are new to the terminal or don't have Python installed, I wrote a much more detailed guide on the EGM-4 and this software, available here.
+> For more help installing, [see this guide](https://docs.mor-gan.com/posts/using-the-egm-4/).
 
 ### For Developers
 
