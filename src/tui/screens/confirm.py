@@ -15,8 +15,8 @@ class ConfirmScreen(ModalScreen[bool]):
         background: rgba(0,0,0,0.7);
     }
     
-    Container {
-        width: 50;
+    #confirm-dialog {
+        width: 60;
         height: auto;
         background: $surface;
         padding: 1 2;
@@ -34,13 +34,19 @@ class ConfirmScreen(ModalScreen[bool]):
     }
     
     .confirm-message {
-        margin-bottom: 2;
+        margin-bottom: 1;
         text-align: center;
     }
     
-    Grid {
+    #confirm-dialog Grid {
         grid-size: 2;
         grid-gutter: 1;
+        height: 3;
+    }
+    
+    #confirm-dialog Button {
+        width: 100%;
+        min-width: 10;
     }
     """
 
@@ -56,7 +62,7 @@ class ConfirmScreen(ModalScreen[bool]):
         self.message = message
 
     def compose(self) -> ComposeResult:
-        with Container():
+        with Container(id="confirm-dialog"):
             yield Label(self.title, classes="confirm-header")
             yield Label(self.message, classes="confirm-message")
             with Grid():

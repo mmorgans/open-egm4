@@ -92,7 +92,6 @@ class ChannelLegend(Widget):
         self._probe_type = probe_type
         # Default init
         self.set_probe_type(probe_type)
-        self._span: int = 600  # Default span in seconds
 
     def set_probe_type(self, probe_type: str) -> None:
         """switch between configs."""
@@ -139,11 +138,6 @@ class ChannelLegend(Widget):
         self._known_plots = known_plots
         self.refresh()
 
-    def set_span(self, span_seconds: int) -> None:
-        """Update the displayed span value."""
-        self._span = span_seconds
-        self.refresh()
-
     def render(self) -> RenderableType:
         """Render the legend bar."""
         text = Text()
@@ -160,10 +154,6 @@ class ChannelLegend(Widget):
                 # Inactive: dim
                 text.append(f"[{key}]", style="dim")
                 text.append(name, style="dim")
-        
-        # Span control hint
-        text.append("  |  +/- Span", style="dim")
-        text.append(f": {self._span}s", style="bold cyan")
         
         # Plot selector hint
         text.append("  |  </>", style="dim")

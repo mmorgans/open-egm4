@@ -137,7 +137,7 @@ class ConnectScreen(Screen):
     @dataclass
     class Connected(Message):
         """Message sent when a connection is established."""
-        port: str
+        port: str | None  # None for offline mode
         resume_session_id: int | None = None
 
     class SessionSelectScreen(ModalScreen):
@@ -257,7 +257,7 @@ class ConnectScreen(Screen):
         self.app.push_screen(self.SessionSelectScreen(sessions), on_session_selected)
 
     def _connect_with_resume(self, session_id: int) -> None:
-        """Connect to port and resume session."""
+        """Connect to port and resume session. Allows offline resume if no port."""
         # Get selected port or auto-detect
         option_list = self.query_one("#port-list", OptionList)
         port_to_use = None
@@ -270,12 +270,12 @@ class ConnectScreen(Screen):
         if not port_to_use:
             port_to_use = find_best_port()
             
-        if not port_to_use:
-            self.query_one("#status", Static).update("No port found for resume")
-            return
-
+        # Allow offline mode (port_to_use may be None)
         self.query_one("#countdown", Static).update("")
-        self.query_one("#status", Static).update(f"Resuming Session #{session_id} on {port_to_use}...")
+        if port_to_use:
+            self.query_one("#status", Static).update(f"Resuming Session #{session_id} on {port_to_use}...")
+        else:
+            self.query_one("#status", Static).update(f"Opening Session #{session_id} (offline)...")
         self.post_message(self.Connected(port=port_to_use, resume_session_id=session_id))
 
     def _start_countdown(self) -> None:

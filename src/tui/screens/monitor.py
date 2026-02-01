@@ -77,7 +77,7 @@ class MonitorScreen(Screen):
 
     def __init__(
         self,
-        port: str,
+        port: str | None,  # None for offline mode
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
@@ -86,7 +86,7 @@ class MonitorScreen(Screen):
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
         self.port = port
-        self.serial = EGM4Serial()
+        self.serial = EGM4Serial() if port else None
         self.is_paused = False
         self.recorded_data: list[dict] = []
         self.raw_log_file = None
@@ -114,28 +114,34 @@ class MonitorScreen(Screen):
 
     def on_mount(self) -> None:
         """Start serial connection when screen mounts."""
-
-        self.start_serial_reading()
-        
-        # Update stats widget with connection info
-        stats = self.query_one("#stats", StatsWidget)
-        stats.port_name = self.port
-        stats.is_connected = True
-        
-        # Log connection
         log = self.query_one("#log", LogWidget)
-        log.log_success(f"USB attached: {self.port}")
+        stats = self.query_one("#stats", StatsWidget)
         
-        # Start periodic USB port monitoring
-        self._usb_monitor = self.set_interval(2.0, self._check_usb_port)
-        
-        # Open raw log file
-        log_filename = f"raw_dump_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
-        try:
-            self.raw_log_file = open(log_filename, 'a')
-            self.raw_log_file.write(f"\n--- Session started {datetime.datetime.now().isoformat()} ---\n")
-        except Exception:
-            pass
+        # Offline mode: skip serial connection
+        if not self.port:
+            stats.port_name = "Offline"
+            stats.is_connected = False
+            log.log_info("Offline mode - viewing saved session")
+        else:
+            self.start_serial_reading()
+            
+            # Update stats widget with connection info
+            stats.port_name = self.port
+            stats.is_connected = True
+            
+            # Log connection
+            log.log_success(f"USB attached: {self.port}")
+            
+            # Start periodic USB port monitoring
+            self._usb_monitor = self.set_interval(2.0, self._check_usb_port)
+            
+            # Open raw log file
+            log_filename = f"raw_dump_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+            try:
+                self.raw_log_file = open(log_filename, 'a')
+                self.raw_log_file.write(f"\n--- Session started {datetime.datetime.now().isoformat()} ---\n")
+            except Exception:
+                pass
             
         # Create DB Session
         if self.db:
@@ -280,7 +286,8 @@ class MonitorScreen(Screen):
 
     async def on_unmount(self) -> None:
         """Clean up when screen unmounts."""
-        await self.serial.disconnect()
+        if self.serial:
+            await self.serial.disconnect()
         if self.raw_log_file:
             try:
                 self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
@@ -514,11 +521,12 @@ class MonitorScreen(Screen):
         stats.device_status = "QUITTING..."
         
         # Clear callbacks to prevent error messages during shutdown
-        self.serial.error_callback = None
-        self.serial.data_callback = None
-        
-        # Close serial connection
-        await self.serial.disconnect()
+        if self.serial:
+            self.serial.error_callback = None
+            self.serial.data_callback = None
+            
+            # Close serial connection
+            await self.serial.disconnect()
         
         # Close log file
         if self.raw_log_file:

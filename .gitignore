@@ -6,6 +6,9 @@ egm4-guide.org
 *.csv
 *.log
 
+# macOS system files
+.DS_Store
+
 # SQLite database (session data)
 *.sqlite
 *.sqlite-shm

@@ -98,13 +98,13 @@ class CO2PlotWidget(PlotextPlot):
         id: str | None = None,
         classes: str | None = None,
         disabled: bool = False,
-        max_points: int = 120,
+        max_points: int = 5000,
         probe_type: str = "GENERIC",
     ) -> None:
         """Initialize the chart widget."""
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         
-        # Display span (how many points to show)
+        # Display span (how many points to show) - effectively infinite for session
         self._max_points = max_points
         
         
@@ -114,7 +114,7 @@ class CO2PlotWidget(PlotextPlot):
         # Data storage: per-plot, per-channel
         # Structure: _plot_data[plot_num][channel_key] = deque of values
         # Also store DT (time) values: _plot_dt[plot_num] = deque of DT values
-        self._buffer_size = 3600
+        self._buffer_size = 5000
         self._plot_data: dict[int, dict[str, deque]] = {}
         self._plot_dt: dict[int, deque] = {}  # DT (time) for X-axis
         
@@ -229,27 +229,14 @@ class CO2PlotWidget(PlotextPlot):
 
     @max_points.setter
     def max_points(self, value: int) -> None:
-        """Update display span (zoom level). Does not minimize data."""
+        """Update max points (internal use mainly)."""
         self._max_points = value
-        # Don't resize deques! Just replot to change the view window.
         self.replot()
 
     @property
     def view_span(self) -> int:
-        """Alias for max_points (current view width in samples)."""
+        """Alias for max_points."""
         return self._max_points
-
-    def increase_span(self) -> None:
-        """Double the chart history span (max 600)."""
-        new_span = min(600, self._max_points * 2)
-        if new_span != self._max_points:
-            self.max_points = new_span
-
-    def decrease_span(self) -> None:
-        """Halve the chart history span (min 30)."""
-        new_span = max(30, self._max_points // 2)
-        if new_span != self._max_points:
-            self.max_points = new_span
 
     @property
     def active_channel(self) -> str:
@@ -428,7 +415,7 @@ class CO2PlotWidget(PlotextPlot):
                 cursor_info = f"  [Cursor: t={cursor_x:.0f}s, {short_name}={cursor_y:.2f}]"
             
             current = y_values[-1]
-            title = f"{full_name}, {unit}: {current:.1f}  |  {plot_label}  Span:{self._max_points}{cursor_info}"
+            title = f"{full_name}, {unit}: {current:.1f}  |  {plot_label}{cursor_info}"
         else:
             title = f"{full_name}, {unit}  |  {plot_label}  Waiting for data..."
             self.plt.ylim(typical_min, typical_max)
