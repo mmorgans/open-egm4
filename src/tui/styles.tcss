@@ -130,3 +130,18 @@ LogWidget {
     height: 100%;
     scrollbar-gutter: stable;
 }
+
+/* Unicode Hints on Connect Screen */
+.unicode-hint {
+    margin-top: 1;
+    color: $text-muted;
+    text-align: center;
+    text-style: italic;
+}
+
+.unicode-hint-on {
+    margin-top: 1;
+    color: $success;
+    text-align: center;
+    text-style: bold;
+}

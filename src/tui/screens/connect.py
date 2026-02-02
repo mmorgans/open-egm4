@@ -11,6 +11,7 @@ from textual.widgets import Button, Footer, Header, OptionList, Static, Label
 from textual.widgets.option_list import Option
 from serial.tools import list_ports
 import importlib.metadata
+import sys
 
 def get_app_version() -> str:
     """Retrieve app version from package metadata or local file."""
@@ -221,6 +222,24 @@ class ConnectScreen(Screen):
                 yield Static("[dim]Probe type auto-detected from data[/dim]", id="status")
                 yield Static("\n[dim][b]ENTER[/]: New Session  |  [b]s[/]: Resume Session[/dim]", 
                            id="help-text", classes="status-text")
+                
+                # Platform & Graphics Status
+                import platform
+                system_name = platform.system()
+                is_windows = sys.platform == "win32"
+                force_unicode = getattr(self.app, "force_unicode", False)
+                
+                if is_windows:
+                    if force_unicode:
+                        msg = f"\n[dim]Platform: {system_name} | Graphics: [green]Advanced[/] (Forced)[/dim]"
+                    else:
+                        msg = f"\n[dim]Platform: {system_name} | Graphics: Basic[/dim]"
+                        msg += "\n[dim i]Run 'open-egm4 --force-unicode' to enable advanced graphics[/dim]"
+                else:
+                    # Mac/Linux defaults to advanced
+                    msg = f"\n[dim]Platform: {system_name} | Graphics: Advanced[/dim]"
+                    
+                yield Static(msg, classes="unicode-hint")
         yield Footer()
 
     def on_mount(self) -> None:

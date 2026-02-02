@@ -10,6 +10,7 @@ Features:
 - Professional keyboard bindings and theming
 """
 
+import argparse
 from pathlib import Path
 
 from textual import on
@@ -87,9 +88,16 @@ class EGM4App(App):
         )
 
 
-def main(force_unicode: bool = False) -> None:
+def main() -> None:
     """Entry point for the EGM-4 TUI application."""
-    app = EGM4App(force_unicode=force_unicode)
+    # Parse arguments here so it works when installed as a CLI tool
+    parser = argparse.ArgumentParser(description="Open EGM-4 TUI")
+    parser.add_argument("--force-unicode", action="store_true", help="Force usage of Unicode symbols even on Windows")
+    
+    # Use parse_known_args to avoid conflict if Textual consumes args (though usually safe)
+    args, _ = parser.parse_known_args()
+    
+    app = EGM4App(force_unicode=args.force_unicode)
     app.run()
 
 
