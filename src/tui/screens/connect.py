@@ -223,27 +223,28 @@ class ConnectScreen(Screen):
                 yield Static("\n[dim][b]ENTER[/]: New Session  |  [b]s[/]: Resume Session[/dim]", 
                            id="help-text", classes="status-text")
                 
-                # Platform & Graphics Status
-                import platform
-                system_name = platform.system()
-                is_windows = sys.platform == "win32"
-                force_unicode = getattr(self.app, "force_unicode", False)
-                
-                if is_windows:
-                    if force_unicode:
-                        msg = f"\n[dim]Platform: {system_name} | Graphics: [green]Advanced[/] (Forced)[/dim]"
-                    else:
-                        msg = f"\n[dim]Platform: {system_name} | Graphics: Basic[/dim]"
-                        msg += "\n[dim i]Run 'open-egm4 --force-unicode' to enable advanced graphics[/dim]"
-                else:
-                    # Mac/Linux defaults to advanced
-                    msg = f"\n[dim]Platform: {system_name} | Graphics: Advanced[/dim]"
-                    
-                yield Static(msg, classes="unicode-hint")
+                yield Static("", id="platform-hint", classes="unicode-hint")
         yield Footer()
 
     def on_mount(self) -> None:
         """Populate port list and start auto-connect countdown."""
+        # Set platform hint text (done here to safely access self.app)
+        import platform
+        system_name = platform.system()
+        is_windows = sys.platform == "win32"
+        force_unicode = getattr(self.app, "force_unicode", False)
+        
+        if is_windows:
+            if force_unicode:
+                msg = f"[dim]Platform: {system_name} | Graphics: [green]Advanced[/] (Forced)[/dim]"
+            else:
+                msg = f"[dim]Platform: {system_name} | Graphics: Basic[/dim]"
+                msg += "\n[dim i]Run 'open-egm4 --force-unicode' to enable advanced graphics[/dim]"
+        else:
+            msg = f"[dim]Platform: {system_name} | Graphics: Advanced[/dim]"
+            
+        self.query_one("#platform-hint", Static).update(msg)
+
         self.refresh_ports()
         
         # Only auto-connect if we found a USB serial device
