@@ -33,15 +33,11 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 
 # Check and install Python
 # Note: Windows has "App Execution Aliases" that make `python` open the Store
-# So we need to actually test if Python runs, not just if the command exists
+# So we need to check if Python actually runs and isn't the Store alias
 $pythonWorks = $false
-try {
-    $null = python --version 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        $pythonWorks = $true
-    }
-} catch {
-    $pythonWorks = $false
+$pythonOutput = python --version 2>&1 | Out-String
+if ($pythonOutput -notmatch "Microsoft Store" -and $pythonOutput -match "Python \d") {
+    $pythonWorks = $true
 }
 
 if (-not $pythonWorks) {
@@ -52,12 +48,8 @@ if (-not $pythonWorks) {
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
         
         # Verify installation
-        try {
-            $null = python --version 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                throw "Python installation failed. Please restart your terminal and try again."
-            }
-        } catch {
+        $pythonOutput = python --version 2>&1 | Out-String
+        if ($pythonOutput -notmatch "Python \d") {
             throw "Python installation failed. Please restart your terminal and try again."
         }
         Write-Success "Python installed successfully."
