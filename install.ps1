@@ -32,14 +32,33 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
 }
 
 # Check and install Python
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+# Note: Windows has "App Execution Aliases" that make `python` open the Store
+# So we need to actually test if Python runs, not just if the command exists
+$pythonWorks = $false
+try {
+    $null = python --version 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        $pythonWorks = $true
+    }
+} catch {
+    $pythonWorks = $false
+}
+
+if (-not $pythonWorks) {
     if ($hasWinget) {
         Write-Info "Python not found. Installing via winget..."
         winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements
         # Refresh PATH
         $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-            throw "Python installation failed. Please install Python manually and try again."
+        
+        # Verify installation
+        try {
+            $null = python --version 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "Python installation failed. Please restart your terminal and try again."
+            }
+        } catch {
+            throw "Python installation failed. Please restart your terminal and try again."
         }
         Write-Success "Python installed successfully."
     } else {
@@ -48,13 +67,18 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 }
 
 # Check Python version (>= 3.10)
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw "Python is not installed or not in PATH. Please restart your terminal and try again, or install Python manually from https://python.org"
+$pythonVersion = $null
+try {
+    $pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $pythonVersion = $null
+    }
+} catch {
+    $pythonVersion = $null
 }
 
-$pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
 if (-not $pythonVersion) {
-    throw "Could not determine Python version. Please ensure Python is properly installed."
+    throw "Python is not working properly. Please restart your terminal and try again, or install Python manually from https://python.org"
 }
 
 $versionParts = $pythonVersion -split '\.'
