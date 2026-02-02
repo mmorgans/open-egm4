@@ -48,7 +48,15 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 }
 
 # Check Python version (>= 3.10)
-$pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    throw "Python is not installed or not in PATH. Please restart your terminal and try again, or install Python manually from https://python.org"
+}
+
+$pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+if (-not $pythonVersion) {
+    throw "Could not determine Python version. Please ensure Python is properly installed."
+}
+
 $versionParts = $pythonVersion -split '\.'
 if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 10)) {
     throw "Open-EGM4 requires Python 3.10 or newer. Your version is $pythonVersion. Please upgrade Python."
@@ -83,6 +91,9 @@ if (-not (Test-Path $VenvDir)) {
         Write-Warn "Virtual environment appears broken. Recreating..."
         Remove-Item -Recurse -Force $VenvDir
         python -m venv $VenvDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to recreate virtual environment."
+        }
     }
 }
 
@@ -101,10 +112,8 @@ $WrapperPath = "$BinDir\open-egm4.cmd"
 
 if (Test-Path $TargetExe) {
     Write-Info "Creating command wrapper at $WrapperPath..."
-    @"
-@echo off
-"$TargetExe" %*
-"@ | Set-Content -Path $WrapperPath -Encoding ASCII
+    $WrapperContent = "@echo off`r`n`"$TargetExe`" %*"
+    Set-Content -Path $WrapperPath -Value $WrapperContent -Encoding ASCII
 } else {
     throw "Installation failed: Executable not found at $TargetExe"
 }
