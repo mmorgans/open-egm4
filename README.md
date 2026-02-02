@@ -14,12 +14,11 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 ## Features
 
 - Real-time CO₂ charting with multi-channel support
-- Session persistence with automatic database saving and resume capability
-- Multiple different probe types, including SRC-1
-- Plot-based data filtering for multi-location measurements
-- Smart export with plot and date filtering
-- Auto-saves raw data to timestamped log files and SQLite database
-- Device status indicators for warmup temperature and zero check progress
+- Session persistence with automatic database saving and resuming
+- Automatically detects and supports all probe types, including SRC-1
+- Data filtering based on plot number
+- Exporting data to a .csv with plot and date filters
+- Status indicators for warmup temperature and zero checking
 
 ## Installation
 
@@ -149,6 +148,8 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 ## EGM-4 Device Operation
 
+For a much more detailed overview of the EGM-4 and how to use it, see [the article I wr](https://docs.mor-gan.com/posts/using-the-egm-4/)
+
 ### Dumping Stored Data
 
 1. Press `4` on the EGM-4 for DMP
@@ -173,7 +174,7 @@ During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before 
 |------|-------------|
 | `egm4_data.sqlite` | Session database, auto-saved, enables resume |
 | `raw_dump_YYYY-MM-DD.log` | Raw serial data, auto-saved each session |
-| `egm4_data_YYYYMMDD_HHMMSS.csv` | Parsed data export with all fields |
+| `egm4_data_YYYYMMDD_HHMMSS.csv` | Exported, parsed data export with all fields |
 
 ### CSV Columns
 
