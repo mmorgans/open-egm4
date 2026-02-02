@@ -24,8 +24,14 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 
 The easiest way to install or update Open-EGM4 is using the automatic installer:
 
+**macOS / Linux:**
 ```bash
 curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.ps1 | iex
 ```
 
 After installation, simply run:
@@ -33,7 +39,8 @@ After installation, simply run:
 ```bash
 open-egm4
 ```
-If you want more information on this project and the EGM-4 itself, or need more detailed installation instructions, see [the article I wrote here](https://docs.mor-gan.com/posts/using-the-egm-4/).
+
+For more information on this project and the EGM-4 itself, or for detailed installation instructions, see [the article I wrote here](https://docs.mor-gan.com/posts/using-the-egm-4/).
 
 ### Manual Installation
 

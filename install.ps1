@@ -1,0 +1,118 @@
+# Open-EGM4 Installation Script for Windows
+# This script installs Open-EGM4 into a dedicated virtual environment
+# and sets up the command line tool.
+
+$ErrorActionPreference = "Stop"
+
+function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
+function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
+function Write-Warn { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
+function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red; exit 1 }
+
+# 1. Check Prerequisites
+Write-Info "Checking prerequisites..."
+
+try {
+    $null = Get-Command git -ErrorAction Stop
+} catch {
+    Write-Err "Git is not installed. Please install Git and try again."
+}
+
+try {
+    $null = Get-Command python -ErrorAction Stop
+} catch {
+    Write-Err "Python is not installed. Please install Python 3.10 or newer and try again."
+}
+
+# Check Python version (>= 3.10)
+$pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+$versionParts = $pythonVersion -split '\.'
+if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 10)) {
+    Write-Err "Open-EGM4 requires Python 3.10 or newer. Your version is $pythonVersion. Please upgrade Python."
+}
+
+# 2. Setup Directories
+$InstallDir = "$env:USERPROFILE\.open-egm4"
+$VenvDir = "$InstallDir\venv"
+$BinDir = "$env:USERPROFILE\.local\bin"
+
+# Detect if updating
+if (Test-Path $VenvDir) {
+    Write-Info "Existing installation detected. Updating..."
+    $IsUpdate = $true
+} else {
+    Write-Info "Installing fresh to $InstallDir..."
+    $IsUpdate = $false
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+}
+
+New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
+
+# 3. Create/Verify Virtual Environment
+if (-not (Test-Path $VenvDir)) {
+    Write-Info "Creating virtual environment..."
+    python -m venv $VenvDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Failed to create virtual environment."
+    }
+} else {
+    if (-not (Test-Path "$VenvDir\Scripts\pip.exe")) {
+        Write-Warn "Virtual environment appears broken. Recreating..."
+        Remove-Item -Recurse -Force $VenvDir
+        python -m venv $VenvDir
+    }
+}
+
+# 4. Install/Update Package
+Write-Info "Fetching latest version and installing dependencies..."
+& "$VenvDir\Scripts\pip.exe" install --upgrade pip 2>&1 | Out-Null
+
+& "$VenvDir\Scripts\pip.exe" install --upgrade git+https://github.com/mmorgans/open-egm4.git
+if ($LASTEXITCODE -ne 0) {
+    Write-Err "Failed to install Open-EGM4. Please check your internet connection and git configuration."
+}
+
+# 5. Create Batch Wrapper
+$TargetExe = "$VenvDir\Scripts\open-egm4.exe"
+$WrapperPath = "$BinDir\open-egm4.cmd"
+
+if (Test-Path $TargetExe) {
+    Write-Info "Creating command wrapper at $WrapperPath..."
+    @"
+@echo off
+"$TargetExe" %*
+"@ | Set-Content -Path $WrapperPath -Encoding ASCII
+} else {
+    Write-Err "Installation failed: Executable not found at $TargetExe"
+}
+
+# 6. Check PATH
+$CurrentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$PathUpdated = $false
+
+if ($CurrentPath -notlike "*$BinDir*") {
+    Write-Info "Adding $BinDir to your PATH..."
+    $NewPath = "$CurrentPath;$BinDir"
+    [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
+    $env:Path = "$env:Path;$BinDir"
+    $PathUpdated = $true
+} else {
+    Write-Info "PATH already correctly configured."
+}
+
+# 7. Finish
+Write-Host ""
+if ($IsUpdate) {
+    Write-Success "Update complete! You are now running the latest version."
+} else {
+    Write-Success "Installation complete!"
+}
+
+Write-Host ""
+Write-Host "To start the application, run:"
+Write-Host "open-egm4" -ForegroundColor Green
+Write-Host ""
+
+if ($PathUpdated) {
+    Write-Host "NOTE: You may need to restart your terminal for the command to become available." -ForegroundColor Blue
+}
