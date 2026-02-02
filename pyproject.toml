@@ -5,7 +5,7 @@ description = "Terminal User Interface for the PP Systems EGM-4 Environmental Ga
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Morgan", email = "morgans@example.com"}
+    {name = "Morgan Salisbury", email = "morgan@mor-gan.com"}
 ]
 requires-python = ">=3.10"
 keywords = ["egm4", "co2", "soil respiration", "tui", "serial", "environmental monitoring", "irga"]

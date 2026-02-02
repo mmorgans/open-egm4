@@ -5,6 +5,12 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 ![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
+<p align="center">
+  <img src="docs/images/connect.png" alt="Connect Screen" width="30%">
+  <img src="docs/images/monitor.png" alt="Monitor Screen" width="30%">
+  <img src="docs/images/export.png" alt="Export Screen" width="30%">
+</p>
+
 ## Features
 
 - Real-time CO₂ charting with multi-channel support
