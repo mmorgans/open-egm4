@@ -239,7 +239,7 @@ class ConnectScreen(Screen):
                 msg = f"[dim]Platform: {system_name} | Graphics: [green]Advanced[/] (Forced)[/dim]"
             else:
                 msg = f"[dim]Platform: {system_name} | Graphics: Basic[/dim]"
-                msg += "\n[dim i]Run 'open-egm4 --force-unicode' to enable advanced graphics[/dim]"
+                msg += "\n[dim i]Run 'open-egm4 --force-unicode' to enable advanced graphics[/]"
         else:
             msg = f"[dim]Platform: {system_name} | Graphics: Advanced[/dim]"
             
