@@ -2,33 +2,56 @@
 # This script installs Open-EGM4 into a dedicated virtual environment
 # and sets up the command line tool.
 
-$ErrorActionPreference = "Stop"
-
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Blue }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
 function Write-Warn { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
-function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red; exit 1 }
+function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
-# 1. Check Prerequisites
+try {
+
+# 1. Check Prerequisites and Install if Missing
 Write-Info "Checking prerequisites..."
 
-try {
-    $null = Get-Command git -ErrorAction Stop
-} catch {
-    Write-Err "Git is not installed. Please install Git and try again."
+# Check for winget (Windows Package Manager)
+$hasWinget = Get-Command winget -ErrorAction SilentlyContinue
+
+# Check and install Git
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    if ($hasWinget) {
+        Write-Info "Git not found. Installing via winget..."
+        winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
+        # Refresh PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            throw "Git installation failed. Please install Git manually and try again."
+        }
+        Write-Success "Git installed successfully."
+    } else {
+        throw "Git is not installed. Please install Git from https://git-scm.com/download/win and try again."
+    }
 }
 
-try {
-    $null = Get-Command python -ErrorAction Stop
-} catch {
-    Write-Err "Python is not installed. Please install Python 3.10 or newer and try again."
+# Check and install Python
+if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+    if ($hasWinget) {
+        Write-Info "Python not found. Installing via winget..."
+        winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements
+        # Refresh PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+            throw "Python installation failed. Please install Python manually and try again."
+        }
+        Write-Success "Python installed successfully."
+    } else {
+        throw "Python is not installed. Please install Python 3.10+ from https://python.org and try again."
+    }
 }
 
 # Check Python version (>= 3.10)
 $pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
 $versionParts = $pythonVersion -split '\.'
 if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 10)) {
-    Write-Err "Open-EGM4 requires Python 3.10 or newer. Your version is $pythonVersion. Please upgrade Python."
+    throw "Open-EGM4 requires Python 3.10 or newer. Your version is $pythonVersion. Please upgrade Python."
 }
 
 # 2. Setup Directories
@@ -53,7 +76,7 @@ if (-not (Test-Path $VenvDir)) {
     Write-Info "Creating virtual environment..."
     python -m venv $VenvDir
     if ($LASTEXITCODE -ne 0) {
-        Write-Err "Failed to create virtual environment."
+        throw "Failed to create virtual environment."
     }
 } else {
     if (-not (Test-Path "$VenvDir\Scripts\pip.exe")) {
@@ -69,7 +92,7 @@ Write-Info "Fetching latest version and installing dependencies..."
 
 & "$VenvDir\Scripts\pip.exe" install --upgrade git+https://github.com/mmorgans/open-egm4.git
 if ($LASTEXITCODE -ne 0) {
-    Write-Err "Failed to install Open-EGM4. Please check your internet connection and git configuration."
+    throw "Failed to install Open-EGM4. Please check your internet connection and git configuration."
 }
 
 # 5. Create Batch Wrapper
@@ -83,7 +106,7 @@ if (Test-Path $TargetExe) {
 "$TargetExe" %*
 "@ | Set-Content -Path $WrapperPath -Encoding ASCII
 } else {
-    Write-Err "Installation failed: Executable not found at $TargetExe"
+    throw "Installation failed: Executable not found at $TargetExe"
 }
 
 # 6. Check PATH
@@ -115,4 +138,12 @@ Write-Host ""
 
 if ($PathUpdated) {
     Write-Host "NOTE: You may need to restart your terminal for the command to become available." -ForegroundColor Blue
+}
+
+} catch {
+    Write-Err "An error occurred: $_"
+} finally {
+    Write-Host ""
+    Write-Host "Press any key to close..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
