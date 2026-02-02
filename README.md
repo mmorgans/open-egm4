@@ -6,9 +6,9 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
 <p align="center">
-  <img src="docs/images/connect.png" alt="Connect Screen" width="30%">
-  <img src="docs/images/monitor.png" alt="Monitor Screen" width="30%">
-  <img src="docs/images/export.png" alt="Export Screen" width="30%">
+  <img src="docs/images/connect.png" alt="Connect Screen" width="32%">
+  <img src="docs/images/monitor.png" alt="Monitor Screen" width="32%">
+  <img src="docs/images/export.png" alt="Export Screen" width="32%">
 </p>
 
 ## Features
