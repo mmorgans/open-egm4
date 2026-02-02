@@ -27,6 +27,10 @@ class EGM4App(App):
     TITLE = "Open EGM-4"
     SUB_TITLE = "Environmental Gas Monitor Interface"
     
+    def __init__(self, force_unicode: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.force_unicode = force_unicode
+    
     CSS_PATH = Path(__file__).parent / "styles.tcss"
     
     SCREENS = {
@@ -56,7 +60,7 @@ class EGM4App(App):
         monitor = MonitorScreen(
             port=event.port, 
             db_handler=self.db,
-            resume_session_id=event.resume_session_id
+            resume_session_id=event.resume_session_id,
         )
         self.push_screen(monitor)
 
@@ -83,9 +87,9 @@ class EGM4App(App):
         )
 
 
-def main() -> None:
+def main(force_unicode: bool = False) -> None:
     """Entry point for the EGM-4 TUI application."""
-    app = EGM4App()
+    app = EGM4App(force_unicode=force_unicode)
     app.run()
 
 

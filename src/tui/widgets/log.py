@@ -1,7 +1,23 @@
 """Log Widget - Scrollable event log for raw data stream."""
 
+import sys
 from datetime import datetime
 from textual.widgets import RichLog
+
+# Symbol definitions
+def get_symbol(name: str, force_unicode: bool = False) -> str:
+    """Get symbol based on platform and force_unicode flag."""
+    is_windows = sys.platform == "win32"
+    use_unicode = not is_windows or force_unicode
+    
+    symbols = {
+        "check": ("\u2713", "[OK]"),
+        "warn":  ("\u26a0", "[!]"),
+        "info":  ("\u2139", "[i]"),
+    }
+    
+    uni, ascii_ = symbols.get(name, ("?", "?"))
+    return uni if use_unicode else ascii_
 
 
 class LogWidget(RichLog):
@@ -57,15 +73,18 @@ class LogWidget(RichLog):
 
     def log_error(self, message: str) -> None:
         """Log an error message."""
-        self.log_event(f"⚠ {message}", "bold red")
+        sym = get_symbol("warn", getattr(self.app, "force_unicode", False))
+        self.log_event(f"{sym} {message}", "bold red")
 
     def log_info(self, message: str) -> None:
         """Log an informational message."""
-        self.log_event(f"ℹ {message}", "cyan")
+        sym = get_symbol("info", getattr(self.app, "force_unicode", False))
+        self.log_event(f"{sym} {message}", "cyan")
 
     def log_success(self, message: str) -> None:
         """Log a success message."""
-        self.log_event(f"✓ {message}", "bold green")
+        sym = get_symbol("check", getattr(self.app, "force_unicode", False))
+        self.log_event(f"{sym} {message}", "bold green")
 
     def log_complete(self) -> None:
         """Log the download complete message."""

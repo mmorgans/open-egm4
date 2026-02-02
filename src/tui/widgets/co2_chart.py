@@ -1,10 +1,14 @@
 """CO2 Chart Widget - Real-time single-channel plotting using textual-plotext."""
 
+import sys
 from collections import deque
 from dataclasses import dataclass
 from textual.reactive import var
 from textual.message import Message
 from textual_plotext import PlotextPlot
+
+# Use ASCII-compatible marker on Windows (braille doesn't render in most Windows terminals)
+DEFAULT_MARKER = "dot" if sys.platform == "win32" else "braille"
 
 
 # SRC-1 (Soil Respiration Chamber) channel configuration
@@ -89,7 +93,7 @@ class CO2PlotWidget(PlotextPlot):
         """Posted when the probe type is detected/changed."""
         probe_type: str
 
-    marker: var[str] = var("braille")
+    marker: var[str] = var(DEFAULT_MARKER)
 
     def __init__(
         self,
@@ -303,6 +307,11 @@ class CO2PlotWidget(PlotextPlot):
 
     def on_mount(self) -> None:
         """Configure the plot when mounted."""
+        # Check if we should force Unicode (braille) even on Windows
+        force_unicode = getattr(self.app, "force_unicode", False)
+        if force_unicode and self.marker == "dot":
+             self.marker = "braille"
+             
         self.replot()
 
     def replot(self) -> None:
