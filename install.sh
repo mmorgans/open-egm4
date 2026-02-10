@@ -1,176 +1,164 @@
 #!/bin/bash
-
 # Open-EGM4 Installation Script
-# This script installs Open-EGM4 into a dedicated virtual environment
-# and sets up the command line tool.
+# Handles installation, updates, repairs, and uninstallation.
 
 set -e
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[0;33m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+info() { echo -e "${CYAN}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 
-success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-warn() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-    exit 1
-}
-
-# 1. Check Prerequisites
-info "Checking prerequisites..."
-
-if ! command -v git &> /dev/null; then
-    error "Git is not installed. Please install Git and try again."
-fi
-
-if ! command -v python3 &> /dev/null; then
-    error "Python 3 is not installed. Please install Python 3.10 or newer and try again."
-fi
-
-# Check Python version (>= 3.10)
-python3 -c "import sys; exit(0) if sys.version_info >= (3, 10) else exit(1)" 2>/dev/null
-if [ $? -ne 0 ]; then
-    error "Open-EGM4 requires Python 3.10 or newer. Your python3 version is $(python3 --version). Please upgrade Python."
-fi
-
-# 2. Setup Directories
 INSTALL_DIR="$HOME/.open-egm4"
 VENV_DIR="$INSTALL_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
+GLOBAL_DB="$INSTALL_DIR/egm4_data.sqlite"
+WRAPPER_PATH="$BIN_DIR/open-egm4"
 
-# Detect if updating
+echo -e "${CYAN}==========================================${NC}"
+echo -e "${CYAN}      Open-EGM4 Installer & Manager       ${NC}"
+echo -e "${CYAN}==========================================${NC}"
+echo ""
+
+# Check if installed
 if [ -d "$VENV_DIR" ]; then
-    info "Existing installation detected. Updating..."
-    IS_UPDATE=true
+    info "Existing installation detected at $INSTALL_DIR"
+    echo "1. Update (Pull latest version, keep data)"
+    echo "2. Repair (Reinstall dependencies, keep data)"
+    echo "3. Uninstall (Remove application)"
+    echo "4. Quit"
+    
+    read -p "Select an option [1-4]: " choice
+    case $choice in
+        1) ACTION="Update" ;;
+        2) ACTION="Repair" ;;
+        3) ACTION="Uninstall" ;;
+        4) exit 0 ;;
+        *) ACTION="Update" ;;
+    esac
 else
-    info "Installing fresh to $INSTALL_DIR..."
-    IS_UPDATE=false
-    mkdir -p "$INSTALL_DIR"
+    ACTION="Install"
+    info "Ready to install Open-EGM4 to $INSTALL_DIR"
+    read -p "Press ENTER to continue, or Ctrl+C to cancel..."
 fi
 
+# ==========================================
+# WORKFLOW: UNINSTALL
+# ==========================================
+if [ "$ACTION" == "Uninstall" ]; then
+    info "Uninstalling Open-EGM4..."
+    
+    if [ -f "$GLOBAL_DB" ]; then
+        read -p "Keep database file ($GLOBAL_DB)? [Y/n] " keep_db
+        if [[ $keep_db =~ ^[Nn]$ ]]; then
+            rm -f "$GLOBAL_DB"
+        else
+            info "Preserving database..."
+        fi
+    fi
+    
+    rm -rf "$VENV_DIR"
+    rm -f "$WRAPPER_PATH"
+    
+    # Remove install dir only if empty or db removed
+    if [ ! -f "$GLOBAL_DB" ]; then
+        # Check if dir is empty (ignoring hidden files? No, just check if empty)
+        rmdir "$INSTALL_DIR" 2>/dev/null || true
+    fi
+    
+    success "Uninstalled successfully."
+    echo "Note: You may need to manually remove $BIN_DIR from your PATH if desired."
+    exit 0
+fi
+
+# ==========================================
+# WORKFLOW: INSTALL / UPDATE / REPAIR
+# ==========================================
+
+# 1. Prerequisites
+info "Checking prerequisites..."
+if ! command -v git &> /dev/null; then error "Git not found. Please install git."; fi
+if ! command -v python3 &> /dev/null; then error "Python 3 not found."; fi
+
+# Check Python version >= 3.10
+python3 -c "import sys; exit(0) if sys.version_info >= (3, 10) else exit(1)" 2>/dev/null
+if [ $? -ne 0 ]; then
+    error "Python 3.10+ required. Found $(python3 --version)."
+fi
+
+# 2. Directories & Migration
+mkdir -p "$INSTALL_DIR"
 mkdir -p "$BIN_DIR"
 
-# 3. Create/Verify Virtual Environment
-if [ ! -d "$VENV_DIR" ]; then
-    info "Creating virtual environment..."
-    if ! python3 -m venv "$VENV_DIR"; then
-        error "Failed to create virtual environment. Please check permissions."
-    fi
-else
-    # Simple check if venv is valid
-    if [ ! -f "$VENV_DIR/bin/pip" ]; then
-        warn "Virtual environment appears broken. Recreating..."
-        rm -rf "$VENV_DIR"
-        python3 -m venv "$VENV_DIR"
+LOCAL_DB="./egm4_data.sqlite"
+if [ -f "$LOCAL_DB" ]; then
+    if [ ! -f "$GLOBAL_DB" ]; then
+        info "Migrating existing database from current folder to installation directory..."
+        cp "$LOCAL_DB" "$GLOBAL_DB"
+        success "Database migrated."
+    else
+        warn "Found local database but a global one already exists. Using global."
     fi
 fi
 
-# 4. Install/Update Package
-# We want to be careful with the output so it doesn't look like it hung
-info "Fetching latest version and installing dependencies..."
-if ! "$VENV_DIR/bin/pip" install --upgrade pip > /dev/null 2>&1; then
-     warn "Failed to upgrade pip, proceeding with current version..."
+# 3. Virtual Environment
+if [ "$ACTION" == "Repair" ] || [ ! -d "$VENV_DIR" ]; then
+    info "Creating/Recreating virtual environment..."
+    rm -rf "$VENV_DIR"
+    python3 -m venv "$VENV_DIR" || error "Failed to create venv."
 fi
 
-# Install the package.
-if ! "$VENV_DIR/bin/pip" install --upgrade git+https://github.com/mmorgans/open-egm4.git; then
-    error "Failed to install Open-EGM4. Please check your internet connection and git configuration."
-fi
+# 4. Install Package
+info "Installing/Updating Open-EGM4..."
+"$VENV_DIR/bin/pip" install --upgrade pip > /dev/null 2>&1
+"$VENV_DIR/bin/pip" install --upgrade git+https://github.com/mmorgans/open-egm4.git || error "Install failed."
 
-# 5. Create Symlink
-TARGET_BIN="$VENV_DIR/bin/open-egm4"
-LINK_NAME="$BIN_DIR/open-egm4"
+# 5. Wrapper
+info "Creating command wrapper..."
+# Create a robust wrapper script instead of just a symlink to handle VENV activation if needed
+# But direct venv python call is usually fine. Symlink is simpler.
+ln -sf "$VENV_DIR/bin/open-egm4" "$WRAPPER_PATH"
 
-if [ -f "$TARGET_BIN" ]; then
-    info "Linking executable to $LINK_NAME..."
-    ln -sf "$TARGET_BIN" "$LINK_NAME"
-else
-    error "Installation failed: Binary not found at $TARGET_BIN"
-fi
-
-# 6. Check PATH
+# 6. PATH Config (Simplified from original)
 SHELL_CONFIG=""
 case "$SHELL" in
     */zsh) SHELL_CONFIG="$HOME/.zshrc" ;;
-    */bash) 
-        if [ -f "$HOME/.bash_profile" ]; then
-            SHELL_CONFIG="$HOME/.bash_profile"
-        elif [ -f "$HOME/.bashrc" ]; then
-            SHELL_CONFIG="$HOME/.bashrc"
-        else
-            SHELL_CONFIG="$HOME/.profile"
-        fi
-        ;;
+    */bash) [ -f "$HOME/.bash_profile" ] && SHELL_CONFIG="$HOME/.bash_profile" || SHELL_CONFIG="$HOME/.bashrc" ;;
     */fish) SHELL_CONFIG="$HOME/.config/fish/config.fish" ;;
     *) SHELL_CONFIG="$HOME/.profile" ;;
 esac
 
 PATH_UPDATED=false
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-    if [ -f "$SHELL_CONFIG" ] && [ -w "$SHELL_CONFIG" ]; then
+    if [ -w "$SHELL_CONFIG" ]; then
         info "Adding $BIN_DIR to PATH in $SHELL_CONFIG..."
-        echo "" >> "$SHELL_CONFIG"
-        echo "# Added by Open-EGM4 installer" >> "$SHELL_CONFIG"
-        
-        # Fish syntax is different
         if [[ "$SHELL" == *"fish"* ]]; then
              echo "set -U fish_user_paths $BIN_DIR \$fish_user_paths" >> "$SHELL_CONFIG"
         else
+             echo >> "$SHELL_CONFIG"
+             echo "# Added by Open-EGM4" >> "$SHELL_CONFIG"
              echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_CONFIG"
         fi
-        
         PATH_UPDATED=true
-    elif [ ! -f "$SHELL_CONFIG" ]; then
-        # Try to create it if it doesn't exist but directory does
-        touch "$SHELL_CONFIG" 2>/dev/null
-        if [ $? -eq 0 ]; then
-             info "Created $SHELL_CONFIG and adding PATH..."
-             echo "export PATH=\"\$PATH:$BIN_DIR\"" >> "$SHELL_CONFIG"
-             PATH_UPDATED=true
-        else
-             warn "Could not create $SHELL_CONFIG. Please manually add $BIN_DIR to your PATH."
-        fi
     else
-        warn "Could not write to $SHELL_CONFIG. Please manually add $BIN_DIR to your PATH."
+        warn "Could not automatically update PATH. Add $BIN_DIR manually."
     fi
 else
-    info "PATH already correctly configured."
+    info "PATH correctly configured."
 fi
 
-# 7. Finish
-echo ""
-if [ "$IS_UPDATE" = true ]; then
-    success "Update complete! You are now running the latest version."
-else
-    success "Installation complete!"
-fi
-
-echo ""
-echo "To start the application, run:"
-echo -e "${GREEN}open-egm4${NC}"
-echo ""
+success "$ACTION completed successfully!"
+echo "Database Location: $GLOBAL_DB"
+echo -e "Run with: ${GREEN}open-egm4${NC}"
 
 if [ "$PATH_UPDATED" = true ]; then
-    echo -e "${BLUE}NOTE:${NC} You may need to restart your terminal or run:"
-    echo "source $SHELL_CONFIG"
-    echo "for the command to become available."
-elif [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then 
-     # If we couldn't auto-update path
-     echo -e "${YELLOW}WARNING:${NC} $BIN_DIR is not in your PATH."
-     echo "Run this command to fix it temporarily:"
-     echo "export PATH=\"\$PATH:$BIN_DIR\""
+    warn "Restart your terminal or run 'source $SHELL_CONFIG' to use the command."
 fi
