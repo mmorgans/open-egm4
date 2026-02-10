@@ -5,8 +5,15 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 class DatabaseHandler:
-    def __init__(self, db_path: str = "egm4_data.sqlite"):
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None):
+        if db_path is None:
+            # Default to ~/.open-egm4/egm4_data.sqlite
+            base_dir = Path.home() / ".open-egm4"
+            base_dir.mkdir(parents=True, exist_ok=True)
+            self.db_path = str(base_dir / "egm4_data.sqlite")
+        else:
+            self.db_path = db_path
+            
         self._init_db()
 
     def _init_db(self):

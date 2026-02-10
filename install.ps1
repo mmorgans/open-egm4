@@ -1,172 +1,181 @@
 # Open-EGM4 Installation Script for Windows
-# This script installs Open-EGM4 into a dedicated virtual environment
-# and sets up the command line tool.
+# This script manages installation, updates, and maintenance for Open-EGM4.
 
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
 function Write-Warn { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
 function Write-Err { param($Message) Write-Host "[ERROR] $Message" -ForegroundColor Red }
 
-try {
-
-# 1. Check Prerequisites and Install if Missing
-Write-Info "Checking prerequisites..."
-
-# Check for winget (Windows Package Manager)
-$hasWinget = Get-Command winget -ErrorAction SilentlyContinue
-
-# Check and install Git
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    if ($hasWinget) {
-        Write-Info "Git not found. Installing via winget..."
-        winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
-        # Refresh PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-            throw "Git installation failed. Please install Git manually and try again."
-        }
-        Write-Success "Git installed successfully."
-    } else {
-        throw "Git is not installed. Please install Git from https://git-scm.com/download/win and try again."
-    }
-}
-
-# Check and install Python
-# Note: Windows has "App Execution Aliases" that make `python` open the Store
-# So we need to check if Python actually runs and isn't the Store alias
-$pythonWorks = $false
-$pythonOutput = python --version 2>&1 | Out-String
-if ($pythonOutput -notmatch "Microsoft Store" -and $pythonOutput -match "Python \d") {
-    $pythonWorks = $true
-}
-
-if (-not $pythonWorks) {
-    if ($hasWinget) {
-        Write-Info "Python not found. Installing via winget..."
-        winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements
-        # Refresh PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
-        
-        # Verify installation
-        $pythonOutput = python --version 2>&1 | Out-String
-        if ($pythonOutput -notmatch "Python \d") {
-            throw "Python installation failed. Please restart your terminal and try again."
-        }
-        Write-Success "Python installed successfully."
-    } else {
-        throw "Python is not installed. Please install Python 3.10+ from https://python.org and try again."
-    }
-}
-
-# Check Python version (>= 3.10)
-$pythonVersion = $null
-try {
-    $pythonVersion = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        $pythonVersion = $null
-    }
-} catch {
-    $pythonVersion = $null
-}
-
-if (-not $pythonVersion) {
-    throw "Python is not working properly. Please restart your terminal and try again, or install Python manually from https://python.org"
-}
-
-$versionParts = $pythonVersion -split '\.'
-if ([int]$versionParts[0] -lt 3 -or ([int]$versionParts[0] -eq 3 -and [int]$versionParts[1] -lt 10)) {
-    throw "Open-EGM4 requires Python 3.10 or newer. Your version is $pythonVersion. Please upgrade Python."
-}
-
-# 2. Setup Directories
 $InstallDir = "$env:USERPROFILE\.open-egm4"
 $VenvDir = "$InstallDir\venv"
 $BinDir = "$env:USERPROFILE\.local\bin"
-
-# Detect if updating
-if (Test-Path $VenvDir) {
-    Write-Info "Existing installation detected. Updating..."
-    $IsUpdate = $true
-} else {
-    Write-Info "Installing fresh to $InstallDir..."
-    $IsUpdate = $false
-    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-}
-
-New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
-
-# 3. Create/Verify Virtual Environment
-if (-not (Test-Path $VenvDir)) {
-    Write-Info "Creating virtual environment..."
-    python -m venv $VenvDir
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to create virtual environment."
-    }
-} else {
-    if (-not (Test-Path "$VenvDir\Scripts\pip.exe")) {
-        Write-Warn "Virtual environment appears broken. Recreating..."
-        Remove-Item -Recurse -Force $VenvDir
-        python -m venv $VenvDir
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to recreate virtual environment."
-        }
-    }
-}
-
-# 4. Install/Update Package
-Write-Info "Fetching latest version and installing dependencies..."
-& "$VenvDir\Scripts\pip.exe" install --upgrade pip 2>&1 | Out-Null
-
-& "$VenvDir\Scripts\pip.exe" install --upgrade git+https://github.com/mmorgans/open-egm4.git
-if ($LASTEXITCODE -ne 0) {
-    throw "Failed to install Open-EGM4. Please check your internet connection and git configuration."
-}
-
-# 5. Create Batch Wrapper
-$TargetExe = "$VenvDir\Scripts\open-egm4.exe"
+$GlobalDB = "$InstallDir\egm4_data.sqlite"
 $WrapperPath = "$BinDir\open-egm4.cmd"
 
-if (Test-Path $TargetExe) {
-    Write-Info "Creating command wrapper at $WrapperPath..."
-    $WrapperContent = "@echo off`r`n`"$TargetExe`" %*"
-    Set-Content -Path $WrapperPath -Value $WrapperContent -Encoding ASCII
-} else {
-    throw "Installation failed: Executable not found at $TargetExe"
-}
+try {
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host "      Open-EGM4 Installer & Manager       " -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host ""
 
-# 6. Check PATH
-$CurrentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$PathUpdated = $false
+    # Check for existing installation
+    $IsInstalled = Test-Path $VenvDir
 
-if ($CurrentPath -notlike "*$BinDir*") {
-    Write-Info "Adding $BinDir to your PATH..."
-    $NewPath = "$CurrentPath;$BinDir"
-    [Environment]::SetEnvironmentVariable("Path", $NewPath, "User")
-    $env:Path = "$env:Path;$BinDir"
-    $PathUpdated = $true
-} else {
-    Write-Info "PATH already correctly configured."
-}
+    if ($IsInstalled) {
+        Write-Info "Existing installation detected at $InstallDir"
+        Write-Host "1. Update (Pull latest version, keep data)"
+        Write-Host "2. Repair (Reinstall dependencies, keep data)"
+        Write-Host "3. Uninstall (Remove application)"
+        Write-Host "4. Quit"
+        
+        $choice = Read-Host "Select an option [1-4]"
+        
+        switch ($choice) {
+            "1" { $Action = "Update" }
+            "2" { $Action = "Repair" }
+            "3" { $Action = "Uninstall" }
+            "4" { exit }
+            default { $Action = "Update" }
+        }
+    } else {
+        $Action = "Install"
+        Write-Info "Ready to install Open-EGM4 to $InstallDir"
+        Write-Host "Press ENTER to continue, or Ctrl+C to cancel..."
+        $null = Read-Host
+    }
 
-# 7. Finish
-Write-Host ""
-if ($IsUpdate) {
-    Write-Success "Update complete! You are now running the latest version."
-} else {
-    Write-Success "Installation complete!"
-}
+    # ==========================================
+    # WORKFLOW: UNINSTALL
+    # ==========================================
+    if ($Action -eq "Uninstall") {
+        Write-Info "Uninstalling Open-EGM4..."
+        
+        if (Test-Path $GlobalDB) {
+            $keepData = Read-Host "Keep database file ($GlobalDB)? [Y/n]"
+            if ($keepData -notmatch "n") {
+                Write-Info "Preserving database..."
+                # Move to temp or just don't delete it?
+                # We'll just delete everything else.
+            } else {
+                Remove-Item $GlobalDB -Force
+            }
+        }
+        
+        # Remove venv
+        if (Test-Path $VenvDir) { Remove-Item -Recurse -Force $VenvDir }
+        
+        # Remove wrapper
+        if (Test-Path $WrapperPath) { Remove-Item -Force $WrapperPath }
+        
+        # We don't remove $InstallDir completely if data is kept
+        # But if data is deleted, we can remove the dir if empty
+        if (-not (Test-Path $GlobalDB)) {
+             if ((Get-ChildItem $InstallDir).Count -eq 0) {
+                 Remove-Item -Force $InstallDir
+             }
+        }
 
-Write-Host ""
-Write-Host "To start the application, run:"
-Write-Host "open-egm4" -ForegroundColor Green
-Write-Host ""
+        Write-Success "Uninstalled successfully."
+        exit
+    }
 
-if ($PathUpdated) {
-    Write-Host "NOTE: You may need to restart your terminal for the command to become available." -ForegroundColor Blue
-}
+    # ==========================================
+    # WORKFLOW: INSTALL / UPDATE / REPAIR
+    # ==========================================
+    
+    # 1. Check Prerequisites (Git & Python)
+    Write-Info "Checking prerequisites..."
+    $hasWinget = Get-Command winget -ErrorAction SilentlyContinue
+
+    # Git
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        if ($hasWinget) {
+            Write-Info "Git not found. Installing via winget..."
+            winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        } else {
+            throw "Git is required but not found. Install from https://git-scm.com/"
+        }
+    }
+
+    # Python
+    $pythonWorks = $false
+    $pythonOutput = python --version 2>&1 | Out-String
+    if ($pythonOutput -notmatch "Microsoft Store" -and $pythonOutput -match "Python \d") { $pythonWorks = $true }
+
+    if (-not $pythonWorks) {
+        if ($hasWinget) {
+            Write-Info "Python not found. Installing via winget..."
+            winget install --id Python.Python.3.12 -e --accept-source-agreements --accept-package-agreements
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        } else {
+            throw "Python 3.10+ is required via https://python.org"
+        }
+    }
+
+    # 2. Setup Directories & Database Migration
+    if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
+    if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir -Force | Out-Null }
+
+    # DATA MIGRATION CHECK
+    $LocalDB = ".\egm4_data.sqlite"
+    if (Test-Path $LocalDB) {
+        if (-not (Test-Path $GlobalDB)) {
+            Write-Info "Migrating existing database from current folder to installation directory..."
+            Copy-Item $LocalDB $GlobalDB
+            Write-Success "Database migrated successfully."
+        } else {
+            Write-Warn "Found a local database ($LocalDB) but a global one already exists."
+            Write-Warn "Using the existing global database. You can manually merge them if needed."
+        }
+    }
+
+    # 3. Virtual Environment
+    if ($Action -eq "Repair" -or -not (Test-Path $VenvDir)) {
+        Write-Info "Creating/Recreating virtual environment..."
+        if (Test-Path $VenvDir) { Remove-Item -Recurse -Force $VenvDir }
+        
+        python -m venv $VenvDir
+        if ($LASTEXITCODE -ne 0) { throw "Failed to create venv." }
+    }
+
+    # 4. Install Package
+    Write-Info "Installing/Updating Open-EGM4..."
+    & "$VenvDir\Scripts\pip.exe" install --upgrade pip 2>&1 | Out-Null
+    
+    # We always pull latest unless it's a specific version repair, but for now git URL is fine
+    & "$VenvDir\Scripts\pip.exe" install --upgrade git+https://github.com/mmorgans/open-egm4.git
+    if ($LASTEXITCODE -ne 0) { throw "Pip install failed. Check internet connection." }
+
+    # 5. Wrapper
+    if (Test-Path "$VenvDir\Scripts\open-egm4.exe") {
+        Write-Info "Updating command wrapper..."
+        $WrapperContent = "@echo off`r`n`"$VenvDir\Scripts\open-egm4.exe`" %*"
+        Set-Content -Path $WrapperPath -Value $WrapperContent -Encoding ASCII
+    }
+
+    # 6. PATH
+    $CurrentPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $PathUpdated = $false
+    if ($CurrentPath -notlike "*$BinDir*") {
+        Write-Info "Adding $BinDir to PATH..."
+        [Environment]::SetEnvironmentVariable("Path", "$CurrentPath;$BinDir", "User")
+        $env:Path = "$env:Path;$BinDir"
+        $PathUpdated = $true
+    }
+
+    # Finish
+    Write-Host ""
+    Write-Success "$Action completed successfully!"
+    Write-Host "Database Location: $GlobalDB"
+    Write-Host "Run with: " -NoNewline; Write-Host "open-egm4" -ForegroundColor Green
+    
+    if ($PathUpdated) {
+        Write-Warn "You may need to restart your terminal for the command to work."
+    }
 
 } catch {
-    Write-Err "An error occurred: $_"
+    Write-Err "Error: $_"
 } finally {
     Write-Host ""
     Write-Host "Press any key to close..." -ForegroundColor Gray
