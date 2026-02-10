@@ -20,9 +20,9 @@ A terminal user interface for the PP Systems EGM-4 Environmental Gas Monitor.
 - Exporting data to a .csv with plot and date filters
 - Status indicators for warmup temperature and zero checking
 
-## Installation
+## Installation & Updating
 
-The easiest way to install or update Open-EGM4 is using the automatic installer:
+The easiest way to install or update Open-EGM4 is using the automatic installer script:
 
 **macOS / Linux:**
 ```bash
@@ -33,7 +33,7 @@ curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh |
 ```powershell
 irm https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.ps1 | iex
 ```
-
+If open-egm4 is already installed, running the script again will allow you to update, repair, or uninstall the software.
 After installation, simply run:
 
 ```bash
@@ -155,7 +155,7 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 ## EGM-4 Device Operation
 
-For a much more detailed overview of the EGM-4 and how to use it, see [the article I wr](https://docs.mor-gan.com/posts/using-the-egm-4/)
+For a much more detailed overview of the EGM-4 and how to use it, see [the article I wrote.](https://docs.mor-gan.com/posts/using-the-egm-4/)
 
 ### Dumping Stored Data
 
