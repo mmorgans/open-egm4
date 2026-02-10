@@ -24,30 +24,35 @@ GLOBAL_DB="$INSTALL_DIR/egm4_data.sqlite"
 WRAPPER_PATH="$BIN_DIR/open-egm4"
 
 echo -e "${CYAN}==========================================${NC}"
-echo -e "${CYAN}      Open-EGM4 Installer & Manager       ${NC}"
+echo -e "${CYAN}   Open-EGM4 Installer & Manager (v1.4)   ${NC}"
 echo -e "${CYAN}==========================================${NC}"
 echo ""
 
 # Check if installed
 if [ -d "$VENV_DIR" ]; then
     info "Existing installation detected at $INSTALL_DIR"
-    echo "1. Update (Pull latest version, keep data)"
-    echo "2. Repair (Reinstall dependencies, keep data)"
-    echo "3. Uninstall (Remove application)"
-    echo "4. Quit"
+    echo ""
+    echo -e "  ${GREEN}1)${NC} Update    (Pull latest version, keep data)"
+    echo -e "  ${GREEN}2)${NC} Repair    (Reinstall dependencies, keep data)"
+    echo -e "  ${GREEN}3)${NC} Uninstall (Remove application)"
+    echo -e "  ${GREEN}4)${NC} Quit"
+    echo ""
     
-    read -p "Select an option [1-4]: " choice
-    case $choice in
-        1) ACTION="Update" ;;
-        2) ACTION="Repair" ;;
-        3) ACTION="Uninstall" ;;
-        4) exit 0 ;;
-        *) ACTION="Update" ;;
-    esac
+    while true; do
+        read -p "Select an option [1-4]: " choice < /dev/tty
+        case $choice in
+            1) ACTION="Update"; break ;;
+            2) ACTION="Repair"; break ;;
+            3) ACTION="Uninstall"; break ;;
+            4) exit 0 ;;
+            *) echo -e "${RED}Invalid option. Please try again.${NC}" ;;
+        esac
+    done
 else
     ACTION="Install"
     info "Ready to install Open-EGM4 to $INSTALL_DIR"
-    read -p "Press ENTER to continue, or Ctrl+C to cancel..."
+    echo ""
+    read -p "Press ENTER to continue, or Ctrl+C to cancel..." < /dev/tty
 fi
 
 # ==========================================

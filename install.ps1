@@ -13,8 +13,9 @@ $GlobalDB = "$InstallDir\egm4_data.sqlite"
 $WrapperPath = "$BinDir\open-egm4.cmd"
 
 try {
+    Clear-Host
     Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "      Open-EGM4 Installer & Manager       " -ForegroundColor Cyan
+    Write-Host "   Open-EGM4 Installer & Manager (v1.4)   " -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
     Write-Host ""
 
@@ -23,23 +24,29 @@ try {
 
     if ($IsInstalled) {
         Write-Info "Existing installation detected at $InstallDir"
-        Write-Host "1. Update (Pull latest version, keep data)"
-        Write-Host "2. Repair (Reinstall dependencies, keep data)"
-        Write-Host "3. Uninstall (Remove application)"
-        Write-Host "4. Quit"
+        Write-Host ""
+        Write-Host "  1) Update    (Pull latest version, keep data)" -ForegroundColor Green
+        Write-Host "  2) Repair    (Reinstall dependencies, keep data)" -ForegroundColor Green
+        Write-Host "  3) Uninstall (Remove application)" -ForegroundColor Green
+        Write-Host "  4) Quit" -ForegroundColor Green
+        Write-Host ""
         
-        $choice = Read-Host "Select an option [1-4]"
+        while ($true) {
+            $choice = Read-Host "Select an option [1-4]"
+            if ($choice -in "1","2","3","4") { break }
+            Write-Warn "Invalid option. Please try again."
+        }
         
         switch ($choice) {
             "1" { $Action = "Update" }
             "2" { $Action = "Repair" }
             "3" { $Action = "Uninstall" }
             "4" { exit }
-            default { $Action = "Update" }
         }
     } else {
         $Action = "Install"
         Write-Info "Ready to install Open-EGM4 to $InstallDir"
+        Write-Host ""
         Write-Host "Press ENTER to continue, or Ctrl+C to cancel..."
         $null = Read-Host
     }
