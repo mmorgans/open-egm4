@@ -31,7 +31,7 @@ get_installed_version() {
     fi
 
     local installed
-    installed=$("$VENV_DIR/bin/python" - <<'PY' 2>/dev/null
+    installed=$("$VENV_DIR/bin/python" -I - <<'PY' 2>/dev/null
 import importlib.metadata
 try:
     version = importlib.metadata.version("open-egm4").strip()

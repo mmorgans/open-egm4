@@ -31,7 +31,7 @@ else:
     print(version or "unknown")
 "@
 
-    $version = & $pythonExe -c $code 2>$null
+    $version = & $pythonExe -I -c $code 2>$null
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
         return "unknown"
     }
