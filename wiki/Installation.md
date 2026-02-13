@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.8+** must be installed on your system.
+- **Python 3.10+** must be installed on your system.
 - An **EGM-4 CO2 Gas Analyzer** connected via Serial/USB.
 
 ## Installation Steps
@@ -15,22 +15,23 @@
 
 2. **Create a Virtual Environment (Recommended)**
    ```bash
-   python -m venv venv
+   python3 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
 3. **Install Dependencies**
    ```bash
-   pip install textual pyserial
+   pip install -e .
    ```
-   *(Note: The `requirements.txt` file in the root directory contains the exact versions)*
 
 ## Running the Application
 
 To start the TUI:
 
 ```bash
-python main.py
+open-egm4
+# or
+python3 main.py
 ```
 
 ## Connection Setup

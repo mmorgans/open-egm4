@@ -29,6 +29,11 @@ from src.tui.screens.note import NoteInputScreen
 class MonitorScreen(Screen):
     """Main monitoring dashboard screen."""
 
+    SAMPLE_STEP_IDLE = "idle"
+    SAMPLE_STEP_INJECT = "inject"
+    SAMPLE_STEP_SETTLE = "settle"
+    SAMPLE_STEP_FLUSH = "flush"
+
     # Defer to styles.tcss or use simple layout
     DEFAULT_CSS = """
     MonitorScreen {
@@ -42,6 +47,8 @@ class MonitorScreen(Screen):
         ("c", "clear", "Clear"),
         ("e", "export", "Export"),
         ("n", "add_note", "Note"),
+        ("m", "toggle_static_mode", "Static"),
+        ("x", "reset_static_cycle", "Reset Static"),
         ("p", "pause", "Pause"),
         ("b", "big_mode", "Big"),
         ("d", "app.toggle_dark", "Theme"),
@@ -98,6 +105,12 @@ class MonitorScreen(Screen):
         self._is_resuming = resume_session_id is not None
         self.flux_calc = FluxCalculator(window_size=30)  # 30s window for Flux
         self._plot_base_times = {} # Track base time for each plot to synthesize timestamps from DT
+        self.static_sampling_mode = False
+        self._sample_counter = 0
+        self._last_measurement: dict | None = None
+        self._sample_capture_active = False
+        self._sample_peak_ppm: float | None = None
+        self._sample_flow_step = self.SAMPLE_STEP_IDLE
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -232,7 +245,12 @@ class MonitorScreen(Screen):
                     'sr_rate': row['soil_resp_rate'], # Export key
                     'probe_type': row['probe_type'],
                     'dt': dt_val,         # Calculated DT
-                    'dt_s': dt_val
+                    'dt_s': dt_val,
+                    'note': '',
+                    'sample_id': '',
+                    'sample_label': '',
+                    'sample_ppm': '',
+                    'sample_peak_ppm': ''
                 }
 
                 # Add to local cache for export
@@ -252,6 +270,34 @@ class MonitorScreen(Screen):
 
         except Exception as e:
             self.query_one("#log", LogWidget).log_error(f"Restore Failed: {e}")
+
+    def _write_raw_line(self, row_type: str, text: str) -> None:
+        if self.raw_log_file:
+            try:
+                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+                self.raw_log_file.write(f"{row_type} [{timestamp}] {text}\n")
+                self.raw_log_file.flush()
+            except (IOError, OSError):
+                pass
+
+    def _sample_step_message(self, step: str) -> str:
+        if step == self.SAMPLE_STEP_INJECT:
+            return "STEP 1: INJECT SAMPLE (N)"
+        if step == self.SAMPLE_STEP_SETTLE:
+            return "STEP 2: WAIT TO SETTLE, CAPTURE (N)"
+        if step == self.SAMPLE_STEP_FLUSH:
+            return "STEP 3: INJECT AMBIENT AIR (N)"
+        return ""
+
+    def _set_sample_step(self, step: str) -> None:
+        self._sample_flow_step = step
+        stats = self.query_one("#stats", StatsWidget)
+        stats.static_sampling_step = self._sample_step_message(step) if self.static_sampling_mode else ""
+
+    def _reset_sample_cycle(self) -> None:
+        self._sample_capture_active = False
+        self._sample_peak_ppm = None
+        self._set_sample_step(self.SAMPLE_STEP_INJECT)
 
     def _check_usb_port(self) -> None:
         """Check if the USB port is still present."""
@@ -273,6 +319,7 @@ class MonitorScreen(Screen):
             # Port present
             if not stats.is_connected:
                 stats.is_connected = True
+                stats.reconnect_count += 1
                 log = self.query_one("#log", LogWidget)
                 log.log_success(f"USB reconnected: {self.port}")
                 # Reset disconnect flag for next time
@@ -348,8 +395,13 @@ class MonitorScreen(Screen):
         log = self.query_one("#log", LogWidget)
         
         timestamp = datetime.datetime.now().isoformat()
+
+        # Track malformed/unknown records for quick quality checks.
+        if parsed.get('error') or rec_type == 'unknown':
+            stats.parse_errors += 1
         
         if rec_type in ('R', 'M'):
+            stats.parsed_records += 1
             # Try to synthesize timestamp from DT (if available) for better consistency
             # This is crucial for Memory Dumps where arrival time != measurement time
             dt_val = parsed.get('dt')
@@ -405,8 +457,17 @@ class MonitorScreen(Screen):
                 'sr_rate': parsed.get('sr', ''),
                 'atmp_mb': parsed.get('atmp', ''),
                 'probe_type': parsed.get('probe_type', ''),
+                'note': '',
+                'sample_id': '',
+                'sample_label': '',
+                'sample_ppm': '',
+                'sample_peak_ppm': '',
             }
             self.recorded_data.append(export_row)
+            self._last_measurement = export_row
+            if self._sample_capture_active:
+                if self._sample_peak_ppm is None or co2 > self._sample_peak_ppm:
+                    self._sample_peak_ppm = co2
             
             # DB Insert (Async Worker)
             if self.db and self.session_id:
@@ -506,10 +567,11 @@ class MonitorScreen(Screen):
         # Log the error but don't show annoying notification
         log = self.query_one("#log", LogWidget)
         log.log_error(event.message)
+        stats = self.query_one("#stats", StatsWidget)
+        stats.serial_errors += 1
         
         # If it's a device error, mark as disconnected
         if "device" in event.message.lower() or "disconnected" in event.message.lower():
-            stats = self.query_one("#stats", StatsWidget)
             stats.is_connected = False
 
     async def action_quit_app(self) -> None:
@@ -559,6 +621,15 @@ class MonitorScreen(Screen):
                 self.query_one("#chart", CO2PlotWidget).clear_data()
                 self.query_one("#stats", StatsWidget).clear_history()
                 self.query_one("#log", LogWidget).clear()
+                self.recorded_data.clear()
+                self.flux_calc.clear()
+                self._plot_base_times.clear()
+                self._sample_capture_active = False
+                self._sample_peak_ppm = None
+                if self.static_sampling_mode:
+                    self._reset_sample_cycle()
+                if hasattr(self, '_last_dt_per_plot'):
+                    self._last_dt_per_plot.clear()
                 # Update legend to reflect cleared plots
                 legend = self.query_one("#legend", ChannelLegend)
                 chart = self.query_one("#chart", CO2PlotWidget)
@@ -604,22 +675,151 @@ class MonitorScreen(Screen):
         self._big_screen = big_screen
         self.app.push_screen(big_screen)
 
+    def _save_event_row(
+        self,
+        row_type: str,
+        note_text: str,
+        sample_id: int | str = "",
+        sample_label: str = "",
+        sample_ppm: float | str = "",
+        sample_peak_ppm: float | str = "",
+    ) -> None:
+        chart = self.query_one("#chart", CO2PlotWidget)
+        stats = self.query_one("#stats", StatsWidget)
+        plot = chart.current_plot
+        dt_val = chart.current_dt
+        current_ppm = stats.current_co2 if stats.current_co2 is not None else ""
+
+        event_row = {
+            'timestamp': datetime.datetime.now().isoformat(),
+            'type': row_type,
+            'plot': plot,
+            'record': stats.hw_record or '',
+            'day': '',
+            'month': '',
+            'hour': '',
+            'minute': '',
+            'co2_ppm': current_ppm,
+            'h2o_mb': '',
+            'rht_c': '',
+            'par': '',
+            'rh_pct': '',
+            'temp_c': '',
+            'dc_ppm': '',
+            'dt_s': dt_val,
+            'sr_rate': '',
+            'atmp_mb': '',
+            'probe_type': '',
+            'note': note_text,
+            'sample_id': sample_id,
+            'sample_label': sample_label,
+            'sample_ppm': sample_ppm,
+            'sample_peak_ppm': sample_peak_ppm,
+        }
+        self.recorded_data.append(event_row)
+
+        if current_ppm != "":
+            chart.add_marker(plot, dt_val, float(current_ppm), note_text)
+
     async def action_add_note(self) -> None:
-        """Open note input dialog."""
-        def handle_note(note: str | None) -> None:
-            if note:
-                timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-                # Log to UI
+        """Add a note, or advance static sampling workflow when static mode is enabled."""
+        if not self.static_sampling_mode:
+            def handle_note(note: str | None) -> None:
+                if not note:
+                    return
+                self._save_event_row("NOTE", note.strip())
                 self.query_one("#log", LogWidget).log_info(f"NOTE: {note}")
-                # Log to raw file
-                if self.raw_log_file:
-                    try:
-                        self.raw_log_file.write(f"NOTE [{timestamp}] {note}\n")
-                        self.raw_log_file.flush()
-                    except (IOError, OSError):
-                        pass
-                    
-        self.app.push_screen(NoteInputScreen(), handle_note)
+                self._write_raw_line("NOTE", note)
+
+            self.app.push_screen(NoteInputScreen(), handle_note)
+            return
+
+        log = self.query_one("#log", LogWidget)
+        stats = self.query_one("#stats", StatsWidget)
+
+        if self._sample_flow_step == self.SAMPLE_STEP_IDLE:
+            self._reset_sample_cycle()
+            return
+
+        if self._sample_flow_step == self.SAMPLE_STEP_INJECT:
+            self._sample_capture_active = True
+            self._sample_peak_ppm = stats.current_co2 if stats.current_co2 is not None else None
+            log.log_info("STATIC: Injection acknowledged; tracking peak ppm.")
+            self._write_raw_line("SAMPLE", "Injection acknowledged; peak tracking started")
+            self._set_sample_step(self.SAMPLE_STEP_SETTLE)
+            return
+
+        if self._sample_flow_step == self.SAMPLE_STEP_SETTLE:
+            def handle_sample_label(note: str | None) -> None:
+                if note is None:
+                    log.log_info("STATIC: Capture cancelled. Still waiting to capture settled value.")
+                    return
+
+                settled_ppm = stats.current_co2 if stats.current_co2 is not None else ""
+                self._sample_counter += 1
+                sample_label = note.strip() or f"Sample {self._sample_counter}"
+                sample_id = self._sample_counter
+                peak_ppm = self._sample_peak_ppm if self._sample_peak_ppm is not None else settled_ppm
+
+                self._save_event_row(
+                    "SAMPLE",
+                    f"[{sample_label}]",
+                    sample_id=sample_id,
+                    sample_label=sample_label,
+                    sample_ppm=settled_ppm,
+                    sample_peak_ppm=peak_ppm,
+                )
+
+                settled_disp = f"{settled_ppm:.0f}" if isinstance(settled_ppm, (int, float)) else "n/a"
+                peak_disp = f"{peak_ppm:.0f}" if isinstance(peak_ppm, (int, float)) else "n/a"
+                log.log_success(
+                    f"SAMPLE #{sample_id}: {sample_label} settled={settled_disp} ppm peak={peak_disp} ppm"
+                )
+                self._write_raw_line("SAMPLE", f"{sample_label}; settled={settled_disp}; peak={peak_disp}")
+
+                self._sample_capture_active = False
+                self._sample_peak_ppm = None
+                self._set_sample_step(self.SAMPLE_STEP_FLUSH)
+
+            self.app.push_screen(
+                NoteInputScreen(
+                    title="Capture Settled Sample",
+                    placeholder="Sample label (optional)...",
+                    save_label="Capture",
+                ),
+                handle_sample_label,
+            )
+            return
+
+        if self._sample_flow_step == self.SAMPLE_STEP_FLUSH:
+            log.log_info("STATIC: Ambient air flush confirmed.")
+            self._write_raw_line("SAMPLE", "Ambient air flush confirmed")
+            self._reset_sample_cycle()
+            return
+
+    def action_toggle_static_mode(self) -> None:
+        """Toggle static sampling mode."""
+        stats = self.query_one("#stats", StatsWidget)
+        self.static_sampling_mode = not self.static_sampling_mode
+        log = self.query_one("#log", LogWidget)
+        if self.static_sampling_mode:
+            stats.static_sampling_mode = True
+            self._reset_sample_cycle()
+            log.log_info("Static sampling mode ON")
+        else:
+            stats.static_sampling_mode = False
+            stats.static_sampling_step = ""
+            self._sample_flow_step = self.SAMPLE_STEP_IDLE
+            self._sample_capture_active = False
+            self._sample_peak_ppm = None
+            log.log_info("Static sampling mode OFF")
+
+    def action_reset_static_cycle(self) -> None:
+        """Reset the static sampling step sequence."""
+        if not self.static_sampling_mode:
+            return
+        self.query_one("#log", LogWidget).log_info("STATIC: Cycle reset.")
+        self._reset_sample_cycle()
 
     @work(thread=True)
     def save_reading_worker(self, session_id: int, data: dict) -> None:

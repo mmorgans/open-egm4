@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-He he he yup
+Open EGM-4 launcher.
 """
 
 import argparse

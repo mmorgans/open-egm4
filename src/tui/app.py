@@ -82,7 +82,7 @@ class EGM4App(App):
     def action_help(self) -> None:
         """Show help information."""
         self.notify(
-            "Q: Quit | D: Dark Mode | E: Export | C: Clear | P: Pause",
+            "Q: Quit | D: Theme | E: Export | C: Clear | P: Pause | M: Static | N: Step/Note | X: Reset",
             title="Keyboard Shortcuts",
             timeout=5,
         )

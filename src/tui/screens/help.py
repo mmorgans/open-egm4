@@ -29,9 +29,12 @@ HELP_TEXT = """
 
 [bold cyan]1-9[/bold cyan]     Select channel to display (Cr, Hr, PAR, etc.)
 [bold cyan]p[/bold cyan]       Pause/Resume data stream
+[bold cyan]m[/bold cyan]       Toggle static sampling mode
+[bold cyan]x[/bold cyan]       Reset static sample cycle
 [bold cyan]c[/bold cyan]       Clear chart data
 [bold cyan]e[/bold cyan]       Export data to CSV file
-[bold cyan]b[/bold cyan]       Big mode (use this in a field? I guess. I thought it was a good idea)
+[bold cyan]n[/bold cyan]       Add note (or advance static sample step)
+[bold cyan]b[/bold cyan]       Big mode (high-visibility field display)
 [bold cyan]d[/bold cyan]       Toggle dark/light theme
 [bold cyan]q[/bold cyan]       Quit application
 
@@ -144,4 +147,3 @@ class HelpScreen(ModalScreen):
         if event.key == "q":
             event.stop()  # Prevent propagation
             self.dismiss()
-

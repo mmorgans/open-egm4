@@ -34,6 +34,11 @@ dependencies = [
     "pyserial>=3.5",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
 [project.scripts]
 open-egm4 = "src.tui.app:main"
 

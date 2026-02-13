@@ -121,6 +121,7 @@ class CO2PlotWidget(PlotextPlot):
         self._buffer_size = 5000
         self._plot_data: dict[int, dict[str, deque]] = {}
         self._plot_dt: dict[int, deque] = {}  # DT (time) for X-axis
+        self._plot_markers: dict[int, deque] = {}  # (dt, value, label)
         
         # Track all plots seen
         self._known_plots: set[int] = set()
@@ -153,6 +154,7 @@ class CO2PlotWidget(PlotextPlot):
                 ch: deque(maxlen=self._buffer_size) for ch in self._channels_config
             }
             self._plot_dt[plot_num] = deque(maxlen=self._buffer_size)
+            self._plot_markers[plot_num] = deque(maxlen=200)
             self._known_plots.add(plot_num)
         return self._plot_data[plot_num]
 
@@ -380,6 +382,19 @@ class CO2PlotWidget(PlotextPlot):
                 x_label = "Samples (newest ->)"
             
             self.plt.plot(x_values, y_values, marker=self.marker, color=color)
+            marker_points_x = []
+            marker_points_y = []
+            if self._filter_plot is not None:
+                for marker_dt, marker_val, _label in self._plot_markers.get(self._filter_plot, []):
+                    marker_points_x.append(marker_dt if use_dt_axis else len(x_values) - 1)
+                    marker_points_y.append(marker_val)
+            else:
+                for plot_num in sorted(self._plot_markers.keys()):
+                    for _marker_dt, marker_val, _label in self._plot_markers.get(plot_num, []):
+                        marker_points_x.append(len(marker_points_x))
+                        marker_points_y.append(marker_val)
+            if marker_points_x and marker_points_y:
+                self.plt.scatter(marker_points_x, marker_points_y, marker="x", color=(255, 255, 0))
             
             # Improved auto-scaling: fit tightly to actual data
             data_min = min(y_values)
@@ -536,8 +551,25 @@ class CO2PlotWidget(PlotextPlot):
     def clear_data(self) -> None:
         """Clear all chart data."""
         self._plot_data.clear()
+        self._plot_dt.clear()
+        self._plot_markers.clear()
         self._known_plots.clear()
         self._filter_plot = None
+        self.replot()
+
+    @property
+    def current_plot(self) -> int:
+        return self._current_plot
+
+    @property
+    def current_dt(self) -> int:
+        return self._current_dt
+
+    def add_marker(self, plot_num: int, dt_value: float, value: float, label: str) -> None:
+        """Add a visual marker for note/sample events."""
+        if plot_num not in self._plot_markers:
+            self._plot_markers[plot_num] = deque(maxlen=200)
+        self._plot_markers[plot_num].append((float(dt_value), float(value), label))
         self.replot()
 
     @property

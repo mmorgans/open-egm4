@@ -1,6 +1,8 @@
 """Connect Screen - Serial port selection and connection."""
 
 from dataclasses import dataclass
+from pathlib import Path
+import subprocess
 
 from textual import on
 from textual.app import ComposeResult
@@ -13,16 +15,44 @@ from serial.tools import list_ports
 import importlib.metadata
 import sys
 
+
+def _version_from_git(repo_root: Path) -> str | None:
+    """Return version from git tags when running from a repo checkout."""
+    git_dir = repo_root / ".git"
+    if not git_dir.exists():
+        return None
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "describe", "--tags", "--dirty", "--always"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        version = result.stdout.strip()
+        if version:
+            return version
+    except Exception:
+        return None
+    return None
+
+
 def get_app_version() -> str:
     """Retrieve app version from package metadata or local file."""
+    repo_root = Path(__file__).resolve().parents[3]
+
+    # Prefer local git describe in source checkouts to avoid stale installed metadata.
+    git_version = _version_from_git(repo_root)
+    if git_version:
+        return git_version
+
     try:
-        # Try retrieving installed package version
+        # Try retrieving installed package version.
         return f"v{importlib.metadata.version('open-egm4')}"
     except importlib.metadata.PackageNotFoundError:
         pass
         
     try:
-        # Try retrieving local version file (written by setuptools_scm)
+        # Try retrieving local version file (written by setuptools_scm).
         from src.version import version
         return f"v{version}"
     except ImportError:

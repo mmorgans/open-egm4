@@ -109,12 +109,14 @@ MonitorScreen {
     height: auto;
     border: solid $primary;
     padding: 1;
+    overflow-y: auto;
 }
 
 /* Log: fills remaining space in right panel */
 #log {
     height: 1fr;
     border: solid $primary;
+    overflow-x: hidden;
 }
 
 /* Widget defaults */

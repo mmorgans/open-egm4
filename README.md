@@ -68,6 +68,8 @@ cd open-egm4
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\\Scripts\\activate
 pip install -e .
+# or with test tooling:
+pip install -e ".[dev]"
 ```
 
 
@@ -77,6 +79,16 @@ open-egm4
 # or
 ./venv/bin/python main.py
 ```
+
+Run tests:
+```bash
+pytest -q
+```
+
+The monitor stats panel now includes quick data-health counters:
+- `Parsed/Err` - successfully parsed measurement records vs malformed/unknown records
+- `Reconnects` - USB reconnect events detected during the session
+- `Serial Err` - serial-layer errors reported during the session
 
 ### Installation Troubleshooting
 
@@ -134,7 +146,9 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 | `e` | Export to CSV with plot and date filters |
 | `c` | Clear chart data |
 | `p` | Pause or resume data stream |
-| `n` | Add timestamped note to log |
+| `m` | Toggle static sampling mode |
+| `n` | Add note (or advance static sample step) |
+| `x` | Reset static sample cycle |
 | `?` | Help screen |
 
 ### Chart Controls
@@ -148,9 +162,9 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Navigate port or session list |
-| `Enter` | Connect to port or resume session |
-| `n` | Start new session |
+| `↑` / `↓` | Navigate port list |
+| `Enter` | Connect to selected port |
+| `s` | Resume previous session |
 | `q` | Quit |
 
 ## EGM-4 Device Operation
@@ -179,7 +193,7 @@ During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before 
 
 | File | Description |
 |------|-------------|
-| `egm4_data.sqlite` | Session database, auto-saved, enables resume |
+| `~/.open-egm4/egm4_data.sqlite` | Session database, auto-saved, enables resume |
 | `raw_dump_YYYY-MM-DD.log` | Raw serial data, auto-saved each session |
 | `egm4_data_YYYYMMDD_HHMMSS.csv` | Exported, parsed data export with all fields |
 
@@ -191,10 +205,41 @@ The exported CSV includes all fields from the EGM-4 record format:
 - `type` - M for real-time or R for memory
 - `plot`, `record` - Plot and record numbers
 - `day`, `month`, `hour`, `minute` - Device timestamp
-- `co2_ppm`, `h2o_mb`, `temp_c` - IRGA readings
+- `co2_ppm`, `h2o_mb`, `rht_c`, `temp_c` - IRGA readings
 - `par`, `rh_pct` - Probe measurements
 - `dc_ppm`, `dt_s`, `sr_rate` - Change in CO₂ and respiration rate
 - `atmp_mb`, `probe_type` - Atmospheric pressure and probe code
+- `note` - Free-form note text
+- `sample_id`, `sample_label`, `sample_ppm`, `sample_peak_ppm` - Static sampling metadata
+
+Pressing `n` in normal mode creates `NOTE` rows in CSV exports (not just the event log).
+
+### Static Sampling Mode
+
+Press `m` on the monitor screen to toggle static sampling mode.  
+When enabled, the stats panel shows `STATIC SAMPLING` and the current step prompt.
+Press `n` to advance the current step:
+
+1. Inject sample gas, then press `n`
+2. Wait for settling after pressure spike, then press `n` to capture
+3. Enter optional sample label
+4. Inject ambient air flush, then press `n`
+
+Press `x` anytime to reset to step 1.
+
+Sample events are:
+- visible in the event log
+- marked on the chart
+- included in CSV export rows (`type=SAMPLE`) with both settled and peak ppm
+
+## Release Process
+
+Releases are tag-driven via `setuptools_scm`:
+
+1. Ensure `main` is clean and CI is passing.
+2. Create and push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+3. GitHub Actions runs CI across supported Python versions.
+4. Use the GitHub Release page for notes/changelog summary.
 
 ## License
 

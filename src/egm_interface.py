@@ -300,6 +300,13 @@ class EGM4Serial:
                     probe_type = 0
                 
                 data['probe_type'] = probe_type
+
+                # AP (Atmospheric Pressure) is the 4 chars before PT in modern records.
+                # Keep this parse generic so non-SRC probes also retain pressure values.
+                try:
+                    data['atmp'] = int(line[-6:-2])
+                except ValueError:
+                    data['atmp'] = 0
                 
                 # Parse probe-specific fields using definition
                 defs = PROBE_DEFINITIONS.get(probe_type, PROBE_DEFINITIONS['default'])
@@ -309,9 +316,7 @@ class EGM4Serial:
                         try:
                             # Special handling for SR sign
                             if key == 'sr_sign':
-                                # This is handled later/differently in original code, 
-                                # but let's just parse it if present to helper var
-                                pass 
+                                data['sr_sign'] = line[start:end]
                             else:
                                 val_str = line[start:end]
                                 data[key] = func(val_str)
@@ -328,13 +333,6 @@ class EGM4Serial:
                 #   DT   = line[-18:-14](4 chars) - Delta Time in seconds (cumulative)
                 #   DC   = line[-22:-18](4 chars) - Delta CO2 in ppm (cumulative)
                 if probe_type == 8:
-                    try:
-                        # ATMP is 4 chars before PT
-                        atmp_str = line[-6:-2]
-                        data['atmp'] = int(atmp_str)
-                    except:
-                        data['atmp'] = 0
-                    
                     try:
                         # SR (Soil Respiration rate)
                         sr_str = line[-14:-10]
@@ -356,6 +354,14 @@ class EGM4Serial:
                         data['dc'] = int(dc_str)
                     except:
                         data['dc'] = 0
+
+                # CPY/CFX probe: combine parsed magnitude and sign fields into signed SR value.
+                if probe_type == 11:
+                    sr_mag = float(data.get('sr_mag', 0.0))
+                    sr_sign = str(data.get('sr_sign', '')).strip()
+                    if "-" in sr_sign:
+                        sr_mag = -sr_mag
+                    data['sr'] = sr_mag
                 
                 # Device timestamp
                 from datetime import datetime

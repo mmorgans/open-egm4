@@ -44,13 +44,24 @@ class NoteInputScreen(ModalScreen[str]):
         ("escape", "cancel", "Cancel"),
     ]
 
+    def __init__(
+        self,
+        title: str = "Add Field Note",
+        placeholder: str = "Type note here...",
+        save_label: str = "Save",
+    ) -> None:
+        super().__init__()
+        self.title = title
+        self.placeholder = placeholder
+        self.save_label = save_label
+
     def compose(self) -> ComposeResult:
         with Container():
-            yield Label("Add Field Note", classes="header")
-            yield Input(placeholder="Type note here...", id="note-input")
+            yield Label(self.title, classes="header")
+            yield Input(placeholder=self.placeholder, id="note-input")
             with Grid():
                 yield Button("Cancel", variant="error", id="cancel")
-                yield Button("Save", variant="success", id="save")
+                yield Button(self.save_label, variant="success", id="save")
 
     def action_cancel(self) -> None:
         self.dismiss(None)

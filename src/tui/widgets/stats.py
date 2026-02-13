@@ -29,7 +29,13 @@ class StatsWidget(Widget):
     is_paused: reactive[bool] = reactive(False)
     data_mode: reactive[str] = reactive("")  # "M" for Real-Time, "R" for Memory
     device_status: reactive[str] = reactive("")  # "WARMUP:55", "ZERO:10", or ""
+    static_sampling_mode: reactive[bool] = reactive(False)
+    static_sampling_step: reactive[str] = reactive("")
     hw_record: reactive[int | None] = reactive(None)
+    parsed_records: reactive[int] = reactive(0)
+    parse_errors: reactive[int] = reactive(0)
+    reconnect_count: reactive[int] = reactive(0)
+    serial_errors: reactive[int] = reactive(0)
     
     # Scientific Stats
     flux_slope: reactive[float] = reactive(0.0)
@@ -57,6 +63,11 @@ class StatsWidget(Widget):
         """Clear the history data."""
         self._history.clear()
         self.current_co2 = None
+        self.parsed_records = 0
+        self.parse_errors = 0
+        self.reconnect_count = 0
+        self.serial_errors = 0
+        self.static_sampling_step = ""
 
     def _calculate_stats(self) -> dict:
         """Calculate statistics from history."""
@@ -108,6 +119,13 @@ class StatsWidget(Widget):
         elif self.data_mode == "R":
             header.append("\n")
             header.append("MEMORY DUMP", style="bold yellow")
+
+        if self.static_sampling_mode:
+            header.append("\n")
+            header.append("STATIC SAMPLING", style="bold yellow")
+            if self.static_sampling_step:
+                header.append("\n")
+                header.append(self.static_sampling_step, style="dim")
         
         # Device status (warmup/zero check)
         if self.device_status:
@@ -119,7 +137,7 @@ class StatsWidget(Widget):
             else:
                 header.append(self.device_status, style="bold white")
         
-        header.append("\n\n")
+        header.append("\n")
 
         # Stats Table
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
@@ -141,8 +159,12 @@ class StatsWidget(Widget):
 
         # Stats
         stats = self._calculate_stats()
-        avg = f"{stats['avg']:.1f} ppm" if stats['avg'] else "---"
-        rng = f"{stats['min']:.0f} / {stats['max']:.0f}" if stats['min'] else "---"
+        avg = f"{stats['avg']:.1f} ppm" if stats['avg'] is not None else "---"
+        rng = (
+            f"{stats['min']:.0f} / {stats['max']:.0f}"
+            if stats['min'] is not None and stats['max'] is not None
+            else "---"
+        )
         
         table.add_row("Average", avg)
         table.add_row("Min/Max", rng)
@@ -161,6 +183,9 @@ class StatsWidget(Widget):
         table.add_row("Session Rec", str(self.record_count))
         if self.hw_record is not None:
             table.add_row("Device REC", Text(str(self.hw_record), style="bold yellow"))
+        table.add_row("Parsed/Err", f"{self.parsed_records}/{self.parse_errors}")
+        table.add_row("Reconnects", str(self.reconnect_count))
+        table.add_row("Serial Err", str(self.serial_errors))
 
         # Stability
         stab = stats['stability']

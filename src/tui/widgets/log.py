@@ -38,6 +38,8 @@ class LogWidget(RichLog):
             classes=classes,
             disabled=disabled,
             max_lines=max_lines,
+            min_width=20,
+            wrap=True,
             highlight=True,
             markup=True,
         )

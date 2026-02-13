@@ -78,7 +78,7 @@ Press e from the main export screen.
 What happens:
 1. Data is filtered based on your selections
 2. Filename is auto-generated
-3. CSV is written to current directory
+3. CSV is written to `~/Downloads` if available (otherwise current directory)
 4. Success notification shows file size
 5. Export menu closes
 
@@ -151,6 +151,7 @@ All exports include these columns:
 | `day`, `month`, `hour`, `minute` | Device timestamp components |
 | `co2_ppm` | CO₂ concentration in ppm |
 | `h2o_mb` | H₂O vapor pressure in mbar |
+| `rht_c` | IRGA RH sensor temperature in degrees Celsius |
 | `temp_c` | Temperature in degrees Celsius |
 | `atmp_mb` | Atmospheric pressure in mbar |
 | `par` | PAR light in µmol/m²/s, SRC-1 only |
@@ -159,13 +160,19 @@ All exports include these columns:
 | `dc_ppm` | Delta CO₂ in ppm, SRC-1 only |
 | `dt_s` | Elapsed time in seconds |
 | `sr_rate` | Soil respiration rate, SRC-1 only |
+| `note` | Free-form note text |
+| `sample_id` | Static sample sequence number |
+| `sample_label` | User-entered sample label |
+| `sample_ppm` | Captured ppm at sample time |
+| `sample_peak_ppm` | Peak ppm observed between injection and settled capture |
 
 ### Notes
 
 - Empty cells appear for probe-specific fields when not applicable
 - Headers are always included
-- Data is sorted by plot then timestamp
+- Data order matches session capture order
 - UTF-8 encoding
+- Regular `N` key notes are exported as `type=NOTE` rows
 
 ## Troubleshooting
 

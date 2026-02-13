@@ -17,6 +17,7 @@ Open-EGM4 is a terminal-based interface for the PP Systems EGM-4 CO₂ Gas Analy
 - [Installation](Installation)
 - [User Guide](User-Guide)
 - [Exporting Data](Exporting-Data)
+- [Release Process](Release-Process)
 
 ## Quick Start
 
