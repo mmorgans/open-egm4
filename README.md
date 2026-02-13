@@ -34,6 +34,7 @@ curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh |
 irm https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.ps1 | iex
 ```
 If open-egm4 is already installed, running the script again will allow you to update, repair, or uninstall the software.
+The installer now also shows your currently installed version and the latest available release version before you choose an action.
 After installation, simply run:
 
 ```bash

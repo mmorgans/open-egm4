@@ -5,6 +5,17 @@
 - **Python 3.10+** must be installed on your system.
 - An **EGM-4 CO2 Gas Analyzer** connected via Serial/USB.
 
+## Quick Installer (Recommended)
+
+Use the project installers for guided install/update/repair flows:
+
+- macOS/Linux: `curl -sSL https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.sh | bash`
+- Windows PowerShell: `irm https://raw.githubusercontent.com/mmorgans/open-egm4/main/install.ps1 | iex`
+
+The installer displays both:
+- your currently installed Open-EGM4 version
+- the latest available tagged release version
+
 ## Installation Steps
 
 1. **Clone the Repository**

@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.5.1 - 2026-02-13
+
+### Added
+- Installer version visibility on both macOS/Linux and Windows:
+- Shows currently installed `open-egm4` version.
+- Shows latest available tagged release version from GitHub.
+- Shows update status (`update available`, `up to date`, `ahead of latest release`, or `unable to compare`).
+
+### Changed
+- Installer banner text no longer hardcodes an old installer version string.
+- Installer completion output now reports the installed app version after install/update/repair.
+
+### Docs
+- README and Installation wiki updated to document installer version comparison behavior.
+
 ## v1.5.0 - 2026-02-13
 
 ### Added

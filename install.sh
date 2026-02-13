@@ -22,10 +22,139 @@ VENV_DIR="$INSTALL_DIR/venv"
 BIN_DIR="$HOME/.local/bin"
 GLOBAL_DB="$INSTALL_DIR/egm4_data.sqlite"
 WRAPPER_PATH="$BIN_DIR/open-egm4"
+REPO_TAGS_API_URL="https://api.github.com/repos/mmorgans/open-egm4/tags?per_page=100"
+
+get_installed_version() {
+    if [ ! -x "$VENV_DIR/bin/python" ]; then
+        echo "not installed"
+        return
+    fi
+
+    local installed
+    installed=$("$VENV_DIR/bin/python" - <<'PY' 2>/dev/null
+import importlib.metadata
+try:
+    version = importlib.metadata.version("open-egm4").strip()
+except Exception:
+    print("unknown")
+else:
+    if version and not version.startswith("v"):
+        version = f"v{version}"
+    print(version or "unknown")
+PY
+)
+
+    if [ -z "$installed" ]; then
+        echo "unknown"
+    else
+        echo "$installed"
+    fi
+}
+
+get_latest_available_version() {
+    if ! command -v python3 &> /dev/null; then
+        echo "unknown"
+        return
+    fi
+
+    python3 - "$REPO_TAGS_API_URL" <<'PY' 2>/dev/null
+import json
+import re
+import sys
+import urllib.request
+
+url = sys.argv[1]
+best = None
+best_tag = None
+
+try:
+    req = urllib.request.Request(url, headers={"User-Agent": "open-egm4-installer"})
+    with urllib.request.urlopen(req, timeout=8) as response:
+        tags = json.loads(response.read().decode("utf-8"))
+except Exception:
+    print("unknown")
+    raise SystemExit(0)
+
+for entry in tags:
+    name = str(entry.get("name", "")).strip()
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", name)
+    if not match:
+        continue
+    version_tuple = tuple(int(part) for part in match.groups())
+    if best is None or version_tuple > best:
+        best = version_tuple
+        best_tag = f"v{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}"
+
+print(best_tag or "unknown")
+PY
+}
+
+get_version_relation() {
+    if ! command -v python3 &> /dev/null; then
+        echo "unknown"
+        return
+    fi
+
+    python3 - "$1" "$2" <<'PY' 2>/dev/null
+import re
+import sys
+
+installed = sys.argv[1].strip()
+latest = sys.argv[2].strip()
+pattern = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+
+left = pattern.fullmatch(installed)
+right = pattern.fullmatch(latest)
+
+if not left or not right:
+    print("unknown")
+    raise SystemExit(0)
+
+left_tuple = tuple(int(p) for p in left.groups())
+right_tuple = tuple(int(p) for p in right.groups())
+
+if left_tuple < right_tuple:
+    print("update_available")
+elif left_tuple == right_tuple:
+    print("up_to_date")
+else:
+    print("ahead_of_release")
+PY
+}
+
+show_version_status() {
+    local installed="$1"
+    local latest="$2"
+    local relation
+
+    info "Installed version: $installed"
+    info "Latest available: $latest"
+
+    relation=$(get_version_relation "$installed" "$latest")
+    case "$relation" in
+        update_available)
+            warn "Update available."
+            ;;
+        up_to_date)
+            success "You are on the latest release."
+            ;;
+        ahead_of_release)
+            info "Installed build is newer than latest tagged release."
+            ;;
+        *)
+            warn "Unable to compare versions right now."
+            ;;
+    esac
+}
 
 echo -e "${CYAN}==========================================${NC}"
-echo -e "${CYAN}   Open-EGM4 Installer & Manager (v1.4)   ${NC}"
+echo -e "${CYAN}     Open-EGM4 Installer & Manager         ${NC}"
 echo -e "${CYAN}==========================================${NC}"
+echo ""
+
+INSTALLED_VERSION=$(get_installed_version)
+LATEST_VERSION=$(get_latest_available_version)
+show_version_status "$INSTALLED_VERSION" "$LATEST_VERSION"
 echo ""
 
 # Check if installed
@@ -162,6 +291,10 @@ fi
 
 success "$ACTION completed successfully!"
 echo "Database Location: $GLOBAL_DB"
+FINAL_VERSION=$(get_installed_version)
+if [ "$FINAL_VERSION" != "unknown" ] && [ "$FINAL_VERSION" != "not installed" ]; then
+    echo "Installed Version: $FINAL_VERSION"
+fi
 echo -e "Run with: ${GREEN}open-egm4${NC}"
 
 if [ "$PATH_UPDATED" = true ]; then

@@ -11,12 +11,118 @@ $VenvDir = "$InstallDir\venv"
 $BinDir = "$env:USERPROFILE\.local\bin"
 $GlobalDB = "$InstallDir\egm4_data.sqlite"
 $WrapperPath = "$BinDir\open-egm4.cmd"
+$RepoTagsApiUrl = "https://api.github.com/repos/mmorgans/open-egm4/tags?per_page=100"
+
+function Get-InstalledVersion {
+    $pythonExe = "$VenvDir\Scripts\python.exe"
+    if (-not (Test-Path $pythonExe)) {
+        return "not installed"
+    }
+
+    $code = @"
+import importlib.metadata
+try:
+    version = importlib.metadata.version("open-egm4").strip()
+except Exception:
+    print("unknown")
+else:
+    if version and not version.startswith("v"):
+        version = f"v{version}"
+    print(version or "unknown")
+"@
+
+    $version = & $pythonExe -c $code 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) {
+        return "unknown"
+    }
+    return $version.Trim()
+}
+
+function Get-LatestAvailableVersion {
+    try {
+        $tags = Invoke-RestMethod -Uri $RepoTagsApiUrl -Headers @{ "User-Agent" = "open-egm4-installer" } -TimeoutSec 8
+    } catch {
+        return "unknown"
+    }
+
+    $semverTags = @()
+    foreach ($tag in $tags) {
+        $name = [string]$tag.name
+        if ($name -match "^v?(\d+)\.(\d+)\.(\d+)$") {
+            $semverTags += [PSCustomObject]@{
+                Major = [int]$Matches[1]
+                Minor = [int]$Matches[2]
+                Patch = [int]$Matches[3]
+                Tag   = "v$($Matches[1]).$($Matches[2]).$($Matches[3])"
+            }
+        }
+    }
+
+    if ($semverTags.Count -eq 0) {
+        return "unknown"
+    }
+
+    return ($semverTags | Sort-Object Major, Minor, Patch | Select-Object -Last 1).Tag
+}
+
+function Get-VersionRelation {
+    param(
+        [string]$Installed,
+        [string]$Latest
+    )
+
+    $installedMatch = [regex]::Match($Installed, "^v?(\d+)\.(\d+)\.(\d+)$")
+    $latestMatch = [regex]::Match($Latest, "^v?(\d+)\.(\d+)\.(\d+)$")
+    if (-not $installedMatch.Success -or -not $latestMatch.Success) {
+        return "unknown"
+    }
+
+    $left = @(
+        [int]$installedMatch.Groups[1].Value,
+        [int]$installedMatch.Groups[2].Value,
+        [int]$installedMatch.Groups[3].Value
+    )
+    $right = @(
+        [int]$latestMatch.Groups[1].Value,
+        [int]$latestMatch.Groups[2].Value,
+        [int]$latestMatch.Groups[3].Value
+    )
+
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($left[$i] -lt $right[$i]) { return "update_available" }
+        if ($left[$i] -gt $right[$i]) { return "ahead_of_release" }
+    }
+    return "up_to_date"
+}
+
+function Show-VersionStatus {
+    param(
+        [string]$Installed,
+        [string]$Latest
+    )
+
+    Write-Info "Installed version: $Installed"
+    Write-Info "Latest available: $Latest"
+
+    $relation = Get-VersionRelation -Installed $Installed -Latest $Latest
+    switch ($relation) {
+        "update_available" { Write-Warn "Update available." }
+        "up_to_date" { Write-Success "You are on the latest release." }
+        "ahead_of_release" { Write-Info "Installed build is newer than latest tagged release." }
+        default { Write-Warn "Unable to compare versions right now." }
+    }
+}
 
 try {
     Clear-Host
     Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "   Open-EGM4 Installer & Manager (v1.4)   " -ForegroundColor Cyan
+    Write-Host "     Open-EGM4 Installer & Manager         " -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    $InstalledVersion = Get-InstalledVersion
+    $LatestVersion = Get-LatestAvailableVersion
+    Show-VersionStatus -Installed $InstalledVersion -Latest $LatestVersion
     Write-Host ""
 
     # Check for existing installation
@@ -175,6 +281,10 @@ try {
     Write-Host ""
     Write-Success "$Action completed successfully!"
     Write-Host "Database Location: $GlobalDB"
+    $FinalVersion = Get-InstalledVersion
+    if ($FinalVersion -ne "unknown" -and $FinalVersion -ne "not installed") {
+        Write-Host "Installed Version: $FinalVersion"
+    }
     Write-Host "Run with: " -NoNewline; Write-Host "open-egm4" -ForegroundColor Green
     
     if ($PathUpdated) {
