@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.5.2 - 2026-10-12
 
 ### Recording and recovery
 - Pause now freezes only the chart; database recording, CSV buffering, live values, and static sample capture continue.
