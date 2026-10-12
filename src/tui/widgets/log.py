@@ -83,6 +83,11 @@ class LogWidget(RichLog):
         sym = get_symbol("info", getattr(self.app, "force_unicode", False))
         self.log_event(f"{sym} {message}", "cyan")
 
+    def log_warning(self, message: str) -> None:
+        """Log a warning message."""
+        sym = get_symbol("warn", getattr(self.app, "force_unicode", False))
+        self.log_event(f"{sym} {message}", "bold yellow")
+
     def log_success(self, message: str) -> None:
         """Log a success message."""
         sym = get_symbol("check", getattr(self.app, "force_unicode", False))

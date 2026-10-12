@@ -10,6 +10,11 @@ class RegressionResult:
     std_err: float      # Standard error of the slope
     n: int              # Number of points
 
+    @property
+    def flux(self) -> float:
+        """Backward-compatible alias used by persisted measurement code."""
+        return self.slope
+
 class FluxCalculator:
     """
     Calculates linear regression (Flux) on a stream of CO2 data.
@@ -74,10 +79,19 @@ class FluxCalculator:
             r_squared = 0.0
         else:
             r_squared = (numerator_r / denominator_r) ** 2
+            r_squared = max(0.0, min(1.0, r_squared))
             
-        # Standard Error of Slope (optional, good for confidence)
-        # s_err = sqrt( sum((y - (mx+b))^2) / (n-2) ) / sqrt(sum((x-mean_x)^2))
-        # This is expensive to calc loop again. simpler approximation or skip?
-        # Let's keep it simple for now (0.0).
+        # Standard error of the slope. For fewer than 3 points there is no
+        # residual degree of freedom, so return 0 rather than a noisy estimate.
+        if n > 2:
+            mean_x = sum_x / n
+            ss_x = sum((xi - mean_x) ** 2 for xi in x)
+            residual_ss = sum((yi - (slope * xi + intercept)) ** 2 for xi, yi in zip(x, y))
+            if ss_x > 0:
+                std_err = math.sqrt(residual_ss / (n - 2)) / math.sqrt(ss_x)
+            else:
+                std_err = 0.0
+        else:
+            std_err = 0.0
         
-        return RegressionResult(slope, intercept, r_squared, 0.0, n)
+        return RegressionResult(slope, intercept, r_squared, std_err, n)

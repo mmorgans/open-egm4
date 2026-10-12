@@ -146,7 +146,7 @@ USB-to-serial adapters should work automatically. Ports appear as `/dev/cu.usbse
 | `q` | Quit and save data automatically |
 | `e` | Export to CSV with plot and date filters |
 | `c` | Clear chart data |
-| `p` | Pause or resume data stream |
+| `p` | Pause or resume chart (recording continues) |
 | `m` | Toggle static sampling mode |
 | `n` | Add note (or advance static sample step) |
 | `x` | Reset static sample cycle |
@@ -195,8 +195,9 @@ During zero check, you'll see `ZERO CHECK: Xs` counting up to 15 seconds before 
 | File | Description |
 |------|-------------|
 | `~/.open-egm4/egm4_data.sqlite` | Session database, auto-saved, enables resume |
-| `raw_dump_YYYY-MM-DD.log` | Raw serial data, auto-saved each session |
-| `egm4_data_YYYYMMDD_HHMMSS.csv` | Exported, parsed data export with all fields |
+| `~/.open-egm4/logs/raw_dump_YYYY-MM-DD.log` | Raw serial data, auto-saved each connected session |
+| `~/Downloads/egm4_data_YYYYMMDD_HHMMSS.csv` | Automatic parsed CSV safety export on quit, when data exists |
+| `~/Downloads/egm4_YYYYMMDD_HHMMSS.csv` | Manual parsed data export with plot/date filters |
 
 ### CSV Columns
 
@@ -214,6 +215,23 @@ The exported CSV includes all fields from the EGM-4 record format:
 - `sample_id`, `sample_label`, `sample_ppm`, `sample_peak_ppm` - Static sampling metadata
 
 Pressing `n` in normal mode creates `NOTE` rows in CSV exports (not just the event log).
+Notes and static sample events are also saved in the session database, so resuming a session preserves them for later export.
+
+### Recording and slope display
+
+`p` freezes the chart while database recording, CSV buffering, live values, and
+static sample capture continue. Resuming redraws the chart with buffered readings.
+
+The **Slope** panel shows CO₂ concentration change in ppm/s over the last 30
+points in the current contiguous plot/cycle. It uses device elapsed time when
+available and a monotonic clock for live records without elapsed time. Memory
+records without elapsed time have no calculated slope. This concentration slope
+is separate from the instrument's soil respiration rate. Zero slopes display as zero.
+
+Both `q` and `Ctrl+C` finish queued database writes and create the automatic CSV
+export. Ctrl+C also works while a dialog is open. If export fails, acquisition stops and
+the app stays open: use `e` to export or `q` to retry. A persistent **RECORDING
+FAILED** warning means database saving failed; export the buffered readings to CSV.
 
 ### Static Sampling Mode
 

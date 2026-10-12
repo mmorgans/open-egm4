@@ -223,8 +223,7 @@ if ! command -v git &> /dev/null; then error "Git not found. Please install git.
 if ! command -v python3 &> /dev/null; then error "Python 3 not found."; fi
 
 # Check Python version >= 3.10
-python3 -c "import sys; exit(0) if sys.version_info >= (3, 10) else exit(1)" 2>/dev/null
-if [ $? -ne 0 ]; then
+if ! python3 -c "import sys; exit(0) if sys.version_info >= (3, 10) else exit(1)" 2>/dev/null; then
     error "Python 3.10+ required. Found $(python3 --version)."
 fi
 

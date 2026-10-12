@@ -28,7 +28,7 @@ HELP_TEXT = """
 [bold yellow]▶ KEYBOARD SHORTCUTS[/bold yellow]
 
 [bold cyan]1-9[/bold cyan]     Select channel to display (Cr, Hr, PAR, etc.)
-[bold cyan]p[/bold cyan]       Pause/Resume data stream
+[bold cyan]p[/bold cyan]       Pause/Resume chart (recording continues)
 [bold cyan]m[/bold cyan]       Toggle static sampling mode
 [bold cyan]x[/bold cyan]       Reset static sample cycle
 [bold cyan]c[/bold cyan]       Clear chart data
@@ -40,21 +40,21 @@ HELP_TEXT = """
 
 [bold yellow]▶ CHANNELS[/bold yellow]
 
-[italic]Generally, refer to the manual here. The channels change definition depending on the probe connected.[/italic]
+[italic]The legend under the chart is authoritative. It changes automatically when open-egm4 detects the probe type in the EGM-4 data stream.[/italic]
 
-[bold cyan]1[/bold cyan] Cr    CO2 concentration (ppm)
-[bold cyan]2[/bold cyan] Hr    H2O (mb)
-[bold cyan]3[/bold cyan] PAR   Light intensity (μmol/m²/s)
-[bold cyan]4[/bold cyan] %RH   Chamber relative humidity (%)
-[bold cyan]5[/bold cyan] Temp  Soil temperature (°C)
-[bold cyan]6[/bold cyan] DC    Delta concentration (ppm)
-[bold cyan]7[/bold cyan] SR    Soil Respiration (gCO2/m²/hr)
-[bold cyan]8[/bold cyan] ATMP  Atmospheric pressure (mb)
-[bold cyan]9[/bold cyan] DT    Delta Time (seconds)
+[bold]Common SRC-1 chamber channels:[/bold]
+[bold cyan]1[/bold cyan] CO2       CO2 concentration (ppm)
+[bold cyan]2[/bold cyan] Delta CO2 Delta concentration (ppm)
+[bold cyan]3[/bold cyan] Delta Time Elapsed chamber time (seconds)
+[bold cyan]4[/bold cyan] Soil Resp  Soil respiration rate (gCO2/m2/hr)
+[bold cyan]5[/bold cyan] ATMP       Atmospheric pressure (mb)
+
+[bold]Other probes:[/bold]
+IRGA-only, HTR/STP, PMR, and CPY/CFX probes expose different channel slots.
+Use the on-screen legend rather than memorizing numbers.
 
 [bold cyan]══════════════════════════════════════════════════════════════[/bold cyan]
 [dim]Press Escape to close this help screen[/dim]
-[dim]Press ? to open the real help screen[/dim]
 """
 
 

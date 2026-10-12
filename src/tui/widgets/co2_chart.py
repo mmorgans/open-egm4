@@ -109,6 +109,7 @@ class CO2PlotWidget(PlotextPlot):
         super().__init__(name=name, id=id, classes=classes, disabled=disabled)
         
         # Display span (how many points to show) - effectively infinite for session
+        self.is_paused = False
         self._max_points = max_points
         
         
@@ -318,6 +319,8 @@ class CO2PlotWidget(PlotextPlot):
 
     def replot(self) -> None:
         """Redraw the plot with active channel data."""
+        if self.is_paused:
+            return
         self.plt.clear_data()
         
         ch = self._active_channel

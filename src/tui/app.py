@@ -14,6 +14,7 @@ import argparse
 from pathlib import Path
 
 from textual import on
+from textual.binding import Binding
 from textual.app import App, ComposeResult
 from textual.widgets import Footer, Header
 
@@ -40,7 +41,7 @@ class EGM4App(App):
     
     BINDINGS = [
         ("d", "toggle_dark", "Dark/Light"),
-        ("ctrl+c", "quit", None),  # Always quit, even in modals
+        Binding("ctrl+c", "quit", show=False, priority=True),
         ("?", "help", "Help"),
     ]
 
@@ -77,6 +78,11 @@ class EGM4App(App):
 
     def action_quit(self) -> None:
         """Quit the application."""
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, MonitorScreen):
+                if not screen._quitting:
+                    screen.action_quit_app()
+                return
         self.exit()
 
     def action_help(self) -> None:

@@ -1,5 +1,7 @@
 """Big Mode Screen - High visibility field display."""
 
+import sys
+
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Footer, Static
@@ -150,6 +152,9 @@ class BigModeScreen(Screen):
 
     def _render_big_number(self, value: int) -> str:
         """Render a large ASCII art number."""
+        if sys.platform == "win32" and not getattr(self.app, "force_unicode", False):
+            return str(value)
+
         # Simple large digit rendering using Unicode block characters
         digits = {
             '0': ["█▀▀█", "█  █", "█▄▄█"],

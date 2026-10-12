@@ -4,13 +4,26 @@ import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+
+def get_app_data_dir() -> Path:
+    """Return the directory used for Open EGM-4 durable local data."""
+    base_dir = Path.home() / ".open-egm4"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+def get_log_dir() -> Path:
+    """Return the directory used for raw serial logs."""
+    log_dir = get_app_data_dir() / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
+
+
 class DatabaseHandler:
     def __init__(self, db_path: str | None = None):
         if db_path is None:
             # Default to ~/.open-egm4/egm4_data.sqlite
-            base_dir = Path.home() / ".open-egm4"
-            base_dir.mkdir(parents=True, exist_ok=True)
-            self.db_path = str(base_dir / "egm4_data.sqlite")
+            self.db_path = str(get_app_data_dir() / "egm4_data.sqlite")
         else:
             self.db_path = db_path
             
@@ -53,15 +66,42 @@ class DatabaseHandler:
                 soil_resp_rate REAL,
                 probe_type INTEGER,
                 elapsed_time REAL,
+                device_day INTEGER,
+                device_month INTEGER,
+                device_hour INTEGER,
+                device_minute INTEGER,
+                rht REAL,
+                note TEXT,
+                sample_id TEXT,
+                sample_label TEXT,
+                sample_ppm REAL,
+                sample_peak_ppm REAL,
+                raw_line TEXT,
                 FOREIGN KEY(session_id) REFERENCES sessions(id)
             )
         ''')
 
-        # Migration: Add elapsed_time column if missing (for existing DBs)
-        try:
-            cursor.execute("ALTER TABLE readings ADD COLUMN elapsed_time REAL")
-        except sqlite3.OperationalError:
-            pass # Column likely already exists
+        # Migrations for existing databases. Keep these additive and tolerant so
+        # old field laptops can upgrade without touching their existing data.
+        migrations = [
+            ("elapsed_time", "REAL"),
+            ("device_day", "INTEGER"),
+            ("device_month", "INTEGER"),
+            ("device_hour", "INTEGER"),
+            ("device_minute", "INTEGER"),
+            ("rht", "REAL"),
+            ("note", "TEXT"),
+            ("sample_id", "TEXT"),
+            ("sample_label", "TEXT"),
+            ("sample_ppm", "REAL"),
+            ("sample_peak_ppm", "REAL"),
+            ("raw_line", "TEXT"),
+        ]
+        for column, column_type in migrations:
+            try:
+                cursor.execute(f"ALTER TABLE readings ADD COLUMN {column} {column_type}")
+            except sqlite3.OperationalError:
+                pass # Column likely already exists
 
         # 3. Processed Measurements (Client-side calculated Flux)
         cursor.execute('''
@@ -91,6 +131,20 @@ class DatabaseHandler:
         conn.commit()
         conn.close()
         return session_id
+
+    def end_session(self, session_id: int) -> None:
+        """Mark a data session as ended."""
+        try:
+            conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            cursor = conn.cursor()
+            cursor.execute(
+                'UPDATE sessions SET end_time = ? WHERE id = ? AND end_time IS NULL',
+                (datetime.datetime.now().isoformat(), session_id),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logging.error(f"Error ending session {session_id}: {e}")
 
     def get_latest_session(self) -> Optional[tuple[int, str]]:
         """
@@ -125,39 +179,81 @@ class DatabaseHandler:
             logging.error(f"Error getting recent sessions: {e}")
             return []
 
+    @staticmethod
+    def _num_or_none(value: Any) -> float | None:
+        """Convert blanks and malformed values to NULL-safe numbers."""
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _int_or_none(cls, value: Any) -> int | None:
+        num = cls._num_or_none(value)
+        if num is None:
+            return None
+        return int(num)
+
+    @classmethod
+    def _first_num(cls, *values: Any) -> float | None:
+        for value in values:
+            converted = cls._num_or_none(value)
+            if converted is not None:
+                return converted
+        return None
+
     def insert_reading(self, session_id: int, data: Dict[str, Any]):
         """Insert a raw reading record."""
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         cursor = conn.cursor()
         
+        record_type = data.get('type', data.get('record_type', ''))
+        sample_id = data.get('sample_id', '')
+
         # Extract fields safely
         try:
             cursor.execute('''
                 INSERT INTO readings (
                     session_id, timestamp, record_type, plot_id, record_num,
                     co2, h2o, temp_c, pressure, 
-                    par, humidity, delta_co2, soil_resp_rate, probe_type, elapsed_time
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    par, humidity, delta_co2, soil_resp_rate, probe_type, elapsed_time,
+                    device_day, device_month, device_hour, device_minute, rht,
+                    note, sample_id, sample_label, sample_ppm, sample_peak_ppm, raw_line
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 session_id,
                 data.get('timestamp') or datetime.datetime.now().isoformat(),
-                data.get('type', ''),
-                data.get('plot', 0),
-                data.get('record', 0),
-                data.get('co2_ppm', 0),
-                data.get('h2o', 0),
-                data.get('temp', 0) or data.get('rht', 0), # Fallback to rht if temp is missing (probe vs irga)
-                data.get('atmp', 0),
-                data.get('par', 0),
-                data.get('rh', 0),
-                data.get('dc', 0),
-                data.get('sr', 0),
-                data.get('probe_type', 0),
-                data.get('dt', 0)
+                record_type,
+                self._int_or_none(data.get('plot', data.get('plot_id'))),
+                self._int_or_none(data.get('record', data.get('record_num'))),
+                self._num_or_none(data.get('co2_ppm', data.get('co2'))),
+                self._num_or_none(data.get('h2o', data.get('h2o_mb'))),
+                self._first_num(data.get('temp'), data.get('temp_c')),
+                self._num_or_none(data.get('atmp', data.get('atmp_mb'))),
+                self._num_or_none(data.get('par')),
+                self._num_or_none(data.get('rh', data.get('rh_pct'))),
+                self._num_or_none(data.get('dc', data.get('dc_ppm'))),
+                self._num_or_none(data.get('sr', data.get('sr_rate'))),
+                self._int_or_none(data.get('probe_type')),
+                self._num_or_none(data.get('dt', data.get('dt_s'))),
+                self._int_or_none(data.get('day')),
+                self._int_or_none(data.get('month')),
+                self._int_or_none(data.get('hour')),
+                self._int_or_none(data.get('minute')),
+                self._num_or_none(data.get('rht', data.get('rht_c'))),
+                data.get('note', ''),
+                '' if sample_id in (None, '') else str(sample_id),
+                data.get('sample_label', ''),
+                self._num_or_none(data.get('sample_ppm')),
+                self._num_or_none(data.get('sample_peak_ppm')),
+                data.get('raw_line', ''),
             ))
             conn.commit()
         except Exception as e:
             logging.error(f"DB Insert Error: {e}")
+            raise
         finally:
             conn.close()
 
@@ -186,7 +282,7 @@ class DatabaseHandler:
                 plot_id,
                 start_time.isoformat(),
                 end_time.isoformat(),
-                result.flux,
+                getattr(result, "flux", getattr(result, "slope", 0.0)),
                 result.r_squared,
                 notes
             ))

@@ -226,6 +226,12 @@ try {
         }
     }
 
+    python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $foundPython = (python --version 2>&1 | Out-String).Trim()
+        throw "Python 3.10+ required. Found $foundPython"
+    }
+
     # 2. Setup Directories & Database Migration
     if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
     if (-not (Test-Path $BinDir)) { New-Item -ItemType Directory -Path $BinDir -Force | Out-Null }

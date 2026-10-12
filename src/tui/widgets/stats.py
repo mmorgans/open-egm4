@@ -37,8 +37,10 @@ class StatsWidget(Widget):
     reconnect_count: reactive[int] = reactive(0)
     serial_errors: reactive[int] = reactive(0)
     
+    recording_error: reactive[str] = reactive("")
+
     # Scientific Stats
-    flux_slope: reactive[float] = reactive(0.0)
+    flux_slope: reactive[float | None] = reactive(None)
     flux_r2: reactive[float] = reactive(0.0)
 
     def __init__(
@@ -112,6 +114,9 @@ class StatsWidget(Widget):
         header.append(f"{icon} {conn_text}\n", style=conn_style)
         header.append(self.port_name or "---", style="dim")
         
+        if self.recording_error:
+            header.append("\nRECORDING FAILED — export CSV", style="bold red")
+
         # Data mode indicator
         if self.data_mode == "M":
             header.append("\n")
@@ -170,13 +175,13 @@ class StatsWidget(Widget):
         table.add_row("Min/Max", rng)
         
         # Flux Data
-        if self.flux_slope != 0:
+        if self.flux_slope is not None:
             flux_str = f"{self.flux_slope:+.2f} ppm/s"
             r2_str = f"{self.flux_r2:.2f}"
-            table.add_row("Flux", Text(flux_str, style="bold cyan"))
+            table.add_row("Slope", Text(flux_str, style="bold cyan"))
             table.add_row("R²", Text(r2_str, style="bold magenta"))
         else:
-            table.add_row("Flux", "---")
+            table.add_row("Slope", "---")
         
 
         
@@ -200,6 +205,6 @@ class StatsWidget(Widget):
         table.add_row("Signal", Text(stab, style=stab_style))
 
         if self.is_paused:
-            table.add_row("", Text("PAUSED", style="bold yellow reverse"))
+            table.add_row("", Text("CHART PAUSED • RECORDING", style="bold yellow reverse"))
 
         return Group(header, table)

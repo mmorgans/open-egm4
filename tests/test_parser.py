@@ -40,8 +40,11 @@ def test_parse_src_record_extracts_expected_fields() -> None:
     assert parsed["probe_type"] == 8
     assert parsed["co2_ppm"] == 429
     assert parsed["atmp"] == 965
+    assert parsed["atmp_mb"] == 965
     assert parsed["dt"] == 0
+    assert parsed["dt_s"] == 0
     assert parsed["dc"] == 0
+    assert parsed["dc_ppm"] == 0
 
 
 def test_parse_non_src_record_retains_atmp() -> None:
@@ -61,6 +64,7 @@ def test_parse_type11_builds_signed_sr() -> None:
     assert parsed["probe_type"] == 11
     assert parsed["sr_mag"] == 4.56
     assert parsed["sr"] == -4.56
+    assert parsed["sr_rate"] == -4.56
     assert parsed["atmp"] == 9876
 
 
@@ -77,3 +81,13 @@ def test_parse_warmup_and_zero_records() -> None:
 
     zero_end = parser._parse_data("Z")
     assert zero_end["type"] == "Z_END"
+
+
+def test_pop_record_handles_cr_and_lf_delimiters() -> None:
+    parser = _parser()
+    parser.buffer = "W,+54\nZ,+10\rR000001"
+
+    assert parser._pop_record_from_buffer() == "W,+54"
+    assert parser._pop_record_from_buffer() == "Z,+10"
+    assert parser._pop_record_from_buffer() is None
+    assert parser.buffer == "R000001"

@@ -57,7 +57,7 @@ Memory Dump (Type R):
 
 | Key | Action |
 |-----|--------|
-| `P` | Pause or Resume data stream |
+| `P` | Pause or resume chart (recording continues) |
 | `C` | Clear current chart, data still saved |
 | `N` | Add note (or advance static sample step) |
 | `M` | Toggle static sampling mode |
@@ -146,8 +146,8 @@ All data is automatically saved to `~/.open-egm4/egm4_data.sqlite` as you collec
 ### Auto-Save Features
 
 - Every record is saved immediately
-- Timestamps are preserved exactly
-- Raw log file also created
+- Device timestamps, notes, and static sample events are preserved for resume/export
+- Raw serial logs are created in `~/.open-egm4/logs`
 - Can safely quit anytime, data is safe
 
 ### Resume Capability
@@ -161,6 +161,7 @@ When resuming a session:
 ### Database Location
 
 The SQLite database is stored at `~/.open-egm4/egm4_data.sqlite` by default.
+Manual and automatic CSV exports prefer your `Downloads` folder when it exists.
 
 Tips:
 - Keep database with your project data

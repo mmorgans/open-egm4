@@ -1,5 +1,8 @@
 """Monitor Screen - Live data monitoring dashboard."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
 import csv
 import datetime
 from dataclasses import dataclass
@@ -20,10 +23,17 @@ from src.egm_interface import EGM4Serial
 from src.tui.screens.bigmode import BigModeScreen
 from src.tui.screens.help import HelpScreen
 from src.tui.screens.confirm import ConfirmScreen
-from src.database import DatabaseHandler
+from src.database import DatabaseHandler, get_log_dir
 from src.analysis import FluxCalculator
 import time
 from src.tui.screens.note import NoteInputScreen
+from src.exporting import CSV_HEADERS
+
+
+@dataclass
+class RecordingFailed(Message):
+    """A database write failed; retained on the status panel."""
+    message: str
 
 
 class MonitorScreen(Screen):
@@ -103,7 +113,11 @@ class MonitorScreen(Screen):
         self.db = db_handler
         self.session_id: int | None = resume_session_id
         self._is_resuming = resume_session_id is not None
-        self.flux_calc = FluxCalculator(window_size=30)  # 30s window for Flux
+        self.flux_calc = FluxCalculator(window_size=30)  # Last 30 points
+        self._flux_series = None
+        self._writer = ThreadPoolExecutor(max_workers=1, thread_name_prefix="egm4-save")
+        self._pending_writes = []
+        self._quitting = False
         self._plot_base_times = {} # Track base time for each plot to synthesize timestamps from DT
         self.static_sampling_mode = False
         self._sample_counter = 0
@@ -136,7 +150,7 @@ class MonitorScreen(Screen):
             stats.is_connected = False
             log.log_info("Offline mode - viewing saved session")
         else:
-            self.start_serial_reading()
+            self._serial_worker = self.start_serial_reading()
             
             # Update stats widget with connection info
             stats.port_name = self.port
@@ -148,14 +162,19 @@ class MonitorScreen(Screen):
             # Start periodic USB port monitoring
             self._usb_monitor = self.set_interval(2.0, self._check_usb_port)
             
-            # Open raw log file
-            log_filename = f"raw_dump_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
+            # Open raw log file in the app data directory so field sessions do
+            # not depend on whichever folder the terminal happened to start in.
+            log_filename = get_log_dir() / f"raw_dump_{datetime.datetime.now().strftime('%Y-%m-%d')}.log"
             try:
                 self.raw_log_file = open(log_filename, 'a')
                 self.raw_log_file.write(f"\n--- Session started {datetime.datetime.now().isoformat()} ---\n")
-            except Exception:
-                pass
+                log.log_info(f"Raw serial log: {log_filename}")
+            except Exception as e:
+                log.log_warning(f"Raw log unavailable: {e}")
             
+        if self.db is None:
+            stats.recording_error = "Database unavailable"
+
         # Create DB Session
         if self.db:
             try:
@@ -166,6 +185,7 @@ class MonitorScreen(Screen):
                     self.query_one("#log", LogWidget).log_success(f"New session #{self.session_id} started")
             except Exception as e:
                 self.query_one("#log", LogWidget).log_error(f"DB Error: {e}")
+                stats.recording_error = str(e)
 
     def _restore_session(self, session_id: int) -> None:
         """Restore data from a previous session."""
@@ -190,9 +210,10 @@ class MonitorScreen(Screen):
             # CRITICAL: Sort readings by (plot_id, elapsed_time) to ensure
             # DT values are monotonically increasing within each plot
             # Memory dumps from the EGM may have out-of-order records
-            readings.sort(key=lambda r: (r['plot_id'], r['elapsed_time'] or 0))
+            readings.sort(key=lambda r: (r.get('plot_id') or 0, r.get('elapsed_time') or 0, r.get('id') or 0))
 
             count = 0
+            event_count = 0
 
             # Use batch mode to avoid replotting on every data point
             for row in readings:
@@ -215,23 +236,38 @@ class MonitorScreen(Screen):
                         ts = datetime.datetime.now()
 
                     # Need to track first timestamp per plot for calculation
-                    pid = row['plot_id']
+                    pid = row.get('plot_id') or 0
                     if not hasattr(self, '_fallback_plot_starts'):
                         self._fallback_plot_starts = {}
                     if pid not in self._fallback_plot_starts:
                         self._fallback_plot_starts[pid] = ts
                     dt_val = (ts - self._fallback_plot_starts[pid]).total_seconds()
 
-                # Reconstruct parsed dict format expected by widgets
+                record_type = row.get('record_type') or ''
+                plot_id = row.get('plot_id') or 0
+                record_num = row.get('record_num') or ''
+                note = row.get('note') or ''
+                sample_id = row.get('sample_id') or ''
+                sample_label = row.get('sample_label') or ''
+                sample_ppm = row.get('sample_ppm')
+                sample_peak_ppm = row.get('sample_peak_ppm')
+
+                # Reconstruct parsed/export dict format expected by widgets.
                 parsed = {
                     'timestamp': row['timestamp'],
-                    'type': row['record_type'],
-                    'plot': row['plot_id'],
-                    'record': row['record_num'],
+                    'type': record_type,
+                    'plot': plot_id,
+                    'record': record_num,
+                    'day': row.get('device_day') or '',
+                    'month': row.get('device_month') or '',
+                    'hour': row.get('device_hour') or '',
+                    'minute': row.get('device_minute') or '',
                     'co2': row['co2'],  # Internal key
                     'co2_ppm': row['co2'],
                     'h2o': row['h2o'],
                     'h2o_mb': row['h2o'],
+                    'rht': row.get('rht'),
+                    'rht_c': row.get('rht'),
                     'temp': row['temp_c'],
                     'temp_c': row['temp_c'], # Export key
                     'atmp': row['pressure'],
@@ -246,27 +282,38 @@ class MonitorScreen(Screen):
                     'probe_type': row['probe_type'],
                     'dt': dt_val,         # Calculated DT
                     'dt_s': dt_val,
-                    'note': '',
-                    'sample_id': '',
-                    'sample_label': '',
-                    'sample_ppm': '',
-                    'sample_peak_ppm': ''
+                    'note': note,
+                    'sample_id': sample_id,
+                    'sample_label': sample_label,
+                    'sample_ppm': sample_ppm if sample_ppm is not None else '',
+                    'sample_peak_ppm': sample_peak_ppm if sample_peak_ppm is not None else '',
                 }
 
                 # Add to local cache for export
                 self.recorded_data.append(parsed)
 
-                # Update widgets in batch mode (no replot per item)
-                chart.add_data(parsed, batch_mode=True)
-                stats.add_reading(row['co2'], record=row['record_num'])
-                count += 1
+                if record_type in ("R", "M"):
+                    # Update widgets in batch mode (no replot per item)
+                    chart.add_data(parsed, batch_mode=True)
+                    if row['co2'] is not None:
+                        stats.add_reading(row['co2'], record=row['record_num'])
+                    self._last_measurement = parsed
+                    count += 1
+                else:
+                    event_count += 1
+                    marker_label = note or sample_label or record_type
+                    if row['co2'] is not None and dt_val is not None:
+                        chart.add_marker(plot_id, dt_val, float(row['co2']), marker_label)
 
             # Replot once after all data is loaded
             chart.replot()
+            stats.record_count = count
+            stats.parsed_records = count
 
             # Update legend with restored plots
             legend.set_plot_info(chart.filter_plot, chart.get_known_plots())
-            log.log_success(f"Restored {count} readings")
+            detail = f" and {event_count} events" if event_count else ""
+            log.log_success(f"Restored {count} readings{detail}")
 
         except Exception as e:
             self.query_one("#log", LogWidget).log_error(f"Restore Failed: {e}")
@@ -329,12 +376,16 @@ class MonitorScreen(Screen):
                 # If so, restart it
                 if self.serial and not getattr(self.serial, 'running', False):
                     log.log_info("Restarting data stream...")
-                    self.start_serial_reading()
+                    self._serial_worker = self.start_serial_reading()
 
     async def on_unmount(self) -> None:
         """Clean up when screen unmounts."""
         if self.serial:
             await self.serial.disconnect()
+        await self._flush_writes()
+        self._writer.shutdown(wait=False)
+        if self.db and self.session_id:
+            self.db.end_session(self.session_id)
         if self.raw_log_file:
             try:
                 self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
@@ -375,6 +426,9 @@ class MonitorScreen(Screen):
             self.post_message(SerialError(message=f"Failed to connect to {self.port}"))
             return
 
+        if self._quitting:
+            return
+
         # Start processing loop (this blocks the worker, which is fine for async worker)
         await self.serial.process_loop()
 
@@ -382,9 +436,6 @@ class MonitorScreen(Screen):
     def handle_data_received(self, event: Message) -> None:
         """Handle incoming serial data."""
         if not isinstance(event, DataReceived):
-            return
-        
-        if self.is_paused:
             return
         
         parsed = event.parsed
@@ -431,6 +482,7 @@ class MonitorScreen(Screen):
             
             # Inject timestamp for DB consistency (and for Resume restoration)
             parsed['timestamp'] = timestamp
+            parsed['raw_line'] = event.raw_line
             
             co2 = parsed.get('co2_ppm', 0)
             record = parsed.get('record', 0)
@@ -477,10 +529,9 @@ class MonitorScreen(Screen):
             stats.add_reading(co2, record=parsed.get('record'))
             
             # Real-time Flux Calc
-            self.flux_calc.add_point(time.time(), co2)
-            res = self.flux_calc.calculate()
-            stats.flux_slope = res.slope
-            stats.flux_r2 = res.r_squared
+            res = self._update_slope(parsed)
+            stats.flux_slope = res.slope if res is not None else None
+            stats.flux_r2 = res.r_squared if res is not None else 0.0
             
             stats.record_count += 1
             stats.data_mode = rec_type  # Update mode indicator (M=Real-Time, R=Memory)
@@ -574,45 +625,68 @@ class MonitorScreen(Screen):
         if "device" in event.message.lower() or "disconnected" in event.message.lower():
             stats.is_connected = False
 
+    def _update_slope(self, parsed: dict):
+        """Fit one contiguous plot/cycle using device time or live monotonic time."""
+        elapsed = parsed.get("dt")
+        source = "device" if elapsed is not None else "live"
+        series = (parsed.get("type"), parsed.get("plot"), parsed.get("probe_type"), source)
+        if series != self._flux_series:
+            self.flux_calc.clear()
+            self._flux_series = series
+        if elapsed is None and parsed.get("type") == "R":
+            self.flux_calc.clear()
+            return None
+        timestamp = float(elapsed) if elapsed is not None else time.monotonic()
+        if self.flux_calc.times and timestamp <= self.flux_calc.times[-1]:
+            self.flux_calc.clear()
+        self.flux_calc.add_point(timestamp, parsed["co2_ppm"])
+        return self.flux_calc.calculate() if len(self.flux_calc.times) >= 2 else None
+
+    async def _flush_writes(self) -> None:
+        pending, self._pending_writes = self._pending_writes, []
+        if pending:
+            await asyncio.gather(*(asyncio.wrap_future(f) for f in pending), return_exceptions=True)
+
+    @work(group="shutdown")
     async def action_quit_app(self) -> None:
-        """Save work and quit the application."""
-        # Immediate feedback that we're quitting
+        """Stop acquisition, finish saving, and export before exiting."""
+        if self._quitting:
+            return
+        self._quitting = True
         log = self.query_one("#log", LogWidget)
-        log.log_info("Saving and quitting...")
         stats = self.query_one("#stats", StatsWidget)
-        stats.device_status = "QUITTING..."
-        
-        # Clear callbacks to prevent error messages during shutdown
-        if self.serial:
-            self.serial.error_callback = None
-            self.serial.data_callback = None
-            
-            # Close serial connection
-            await self.serial.disconnect()
-        
-        # Close log file
-        if self.raw_log_file:
-            try:
-                self.raw_log_file.write(f"--- Session ended {datetime.datetime.now().isoformat()} ---\n")
-                self.raw_log_file.close()
-            except Exception:
-                pass
-        
-        # Auto-export if there's data
-        if self.recorded_data:
-            filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-            try:
-                with open(filename, 'w', newline='') as f:
-                    # Get fieldnames from first record
-                    fieldnames = list(self.recorded_data[0].keys())
-                    writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
+        stats.device_status = "SAVING..."
+        try:
+            if hasattr(self, "_usb_monitor"):
+                self._usb_monitor.stop()
+            if self.serial:
+                self.serial.running = False
+                if hasattr(self, "_serial_worker"):
+                    await self._serial_worker.wait()
+                await self.serial.disconnect()
+                self.serial.data_callback = None
+                self.serial.error_callback = None
+            stats.is_connected = False
+            # Let already-posted readings reach their database/export buffers.
+            drained = asyncio.get_running_loop().create_future()
+            self.call_later(drained.set_result, None)
+            await drained
+            await self._flush_writes()
+            if self.recorded_data:
+                filename = f"egm4_data_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.csv"
+                downloads_dir = Path.home() / "Downloads"
+                export_path = (downloads_dir / filename) if downloads_dir.is_dir() else (Path.cwd() / filename)
+                with open(export_path, 'x', newline='', encoding='utf-8') as f:
+                    writer = csv.DictWriter(f, fieldnames=CSV_HEADERS, extrasaction='ignore')
                     writer.writeheader()
                     writer.writerows(self.recorded_data)
-            except Exception:
-                pass
-        
-        # Exit the app
-        self.app.exit()
+                log.log_success(f"Auto-exported CSV: {export_path}")
+            self.app.exit()
+        except Exception as error:
+            self._quitting = False
+            stats.device_status = "STOPPED — SAVE FAILED"
+            log.log_error(f"Could not finish saving: {error}")
+            self.notify("Save failed. Data remains available: E to export, Q to retry.", severity="error", timeout=15)
 
     def action_clear(self) -> None:
         """Clear all data after confirmation."""
@@ -623,6 +697,7 @@ class MonitorScreen(Screen):
                 self.query_one("#log", LogWidget).clear()
                 self.recorded_data.clear()
                 self.flux_calc.clear()
+                self._flux_series = None
                 self._plot_base_times.clear()
                 self._sample_capture_active = False
                 self._sample_peak_ppm = None
@@ -650,11 +725,15 @@ class MonitorScreen(Screen):
         self.is_paused = not self.is_paused
         stats = self.query_one("#stats", StatsWidget)
         stats.is_paused = self.is_paused
+        chart = self.query_one("#chart", CO2PlotWidget)
+        chart.is_paused = self.is_paused
+        if not self.is_paused:
+            chart.replot()
         
         if self.is_paused:
-            self.notify("⏸ Data stream paused", severity="warning")
+            self.notify("Chart paused — recording continues", severity="warning")
         else:
-            self.notify("▶ Data stream resumed", severity="information")
+            self.notify("Chart resumed", severity="information")
 
     def action_export(self) -> None:
         """Open the Export Wizard."""
@@ -721,11 +800,17 @@ class MonitorScreen(Screen):
         if current_ppm != "":
             chart.add_marker(plot, dt_val, float(current_ppm), note_text)
 
+        if self.db and self.session_id:
+            db_row = {**event_row, 'raw_line': note_text}
+            self.save_reading_worker(self.session_id, db_row)
+
     async def action_add_note(self) -> None:
         """Add a note, or advance static sampling workflow when static mode is enabled."""
+        if self._quitting:
+            return
         if not self.static_sampling_mode:
             def handle_note(note: str | None) -> None:
-                if not note:
+                if self._quitting or not note:
                     return
                 self._save_event_row("NOTE", note.strip())
                 self.query_one("#log", LogWidget).log_info(f"NOTE: {note}")
@@ -751,6 +836,8 @@ class MonitorScreen(Screen):
 
         if self._sample_flow_step == self.SAMPLE_STEP_SETTLE:
             def handle_sample_label(note: str | None) -> None:
+                if self._quitting:
+                    return
                 if note is None:
                     log.log_info("STATIC: Capture cancelled. Still waiting to capture settled value.")
                     return
@@ -821,14 +908,22 @@ class MonitorScreen(Screen):
         self.query_one("#log", LogWidget).log_info("STATIC: Cycle reset.")
         self._reset_sample_cycle()
 
-    @work(thread=True)
+    @on(RecordingFailed)
+    def _recording_failed(self, event: RecordingFailed) -> None:
+        error = event.message
+        self.query_one("#stats", StatsWidget).recording_error = str(error)
+        self.query_one("#log", LogWidget).log_error(f"Recording failed: {error}")
+        self.notify("Database recording failed. Export CSV to preserve readings.", severity="error", timeout=15)
+
     def save_reading_worker(self, session_id: int, data: dict) -> None:
-        """Background worker to save data to DB without blocking UI."""
-        try:
-            if self.db:
+        """Serialize writes and retain futures so shutdown can drain them."""
+        def save():
+            try:
                 self.db.insert_reading(session_id, data)
-        except Exception:
-            pass
+            except Exception as error:
+                self.post_message(RecordingFailed(message=str(error)))
+        self._pending_writes = [f for f in self._pending_writes if not f.done()]
+        self._pending_writes.append(self._writer.submit(save))
 
     # Channel selection actions (Dynamic)
     def action_select_slot(self, slot_idx: str) -> None:

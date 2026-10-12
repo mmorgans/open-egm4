@@ -20,7 +20,6 @@ class DesktopSerialTransport:
     """Standard PySerial implementation for Desktop use."""
     def __init__(self):
         self._serial: Optional[serial.Serial] = None
-        self._loop = asyncio.get_event_loop()
 
     @property
     def is_open(self) -> bool:
@@ -35,11 +34,15 @@ class DesktopSerialTransport:
     async def connect(self, port: str) -> bool:
         try:
             # Run blocking open in thread
-            await self._loop.run_in_executor(None, self._connect_sync, port)
+            await self._run_blocking(self._connect_sync, port)
             return True
         except Exception as e:
             logging.error(f"Failed to connect: {e}")
             return False
+
+    async def _run_blocking(self, func, *args):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, func, *args)
 
     def _connect_sync(self, port: str):
         self._serial = serial.Serial(
@@ -53,19 +56,19 @@ class DesktopSerialTransport:
 
     async def disconnect(self) -> None:
         if self._serial:
-            await self._loop.run_in_executor(None, self._serial.close)
+            await self._run_blocking(self._serial.close)
             self._serial = None
 
     async def read(self, n: int) -> bytes:
         if not self._serial:
             return b""
         # Run blocking read in thread
-        return await self._loop.run_in_executor(None, self._serial.read, n)
+        return await self._run_blocking(self._serial.read, n)
 
     async def write(self, data: bytes) -> int:
         if not self._serial:
             return 0
-        return await self._loop.run_in_executor(None, self._serial.write, data)
+        return await self._run_blocking(self._serial.write, data)
 
 class EGM4Serial:
     """
@@ -80,6 +83,17 @@ class EGM4Serial:
         # Callbacks
         self.data_callback: Optional[Callable[[str, dict], None]] = None
         self.error_callback: Optional[Callable[[str], None]] = None
+
+    def _pop_record_from_buffer(self) -> str | None:
+        """Return the next complete record from the serial buffer, if present."""
+        separators = [idx for idx in (self.buffer.find('\r'), self.buffer.find('\n')) if idx != -1]
+        if not separators:
+            return None
+
+        split_at = min(separators)
+        record = self.buffer[:split_at].strip()
+        self.buffer = self.buffer[split_at + 1:]
+        return record
 
     async def connect(self, port: str) -> bool:
         """Connects to the EGM-4 over serial."""
@@ -117,9 +131,10 @@ class EGM4Serial:
                 text_chunk = chunk.decode('utf-8', errors='ignore')
                 self.buffer += text_chunk
                 
-                while '\r' in self.buffer:
-                    record, self.buffer = self.buffer.split('\r', 1)
-                    record = record.strip()
+                while True:
+                    record = self._pop_record_from_buffer()
+                    if record is None:
+                        break
                     if record:
                         parsed = self._parse_data(record)
                         if self.data_callback:
@@ -189,11 +204,6 @@ class EGM4Serial:
         # Define field mappings for different probe types based on EGM-4 Manual
         # Each tuple: (start_idx, end_idx, field_key, converson_func)
         PROBE_DEFINITIONS = {
-            # Type 0: No Sensor (mV inputs)
-            0: [
-                (30, 34, 'aux1', int), (34, 38, 'aux2', int), (38, 42, 'aux3', int),
-                (42, 46, 'aux4', int), (46, 50, 'aux5', int),
-            ],
             # Type 1: STP-1 / CH15T (A=PAR, B=RH(f10), C=Temp(f10), E=mV5)
             1: [
                 (30, 34, 'par', int),
@@ -362,6 +372,18 @@ class EGM4Serial:
                     if "-" in sr_sign:
                         sr_mag = -sr_mag
                     data['sr'] = sr_mag
+
+                # Export/widget aliases. Keeping these near the parser means the
+                # rest of the app can use stable names regardless of probe type.
+                data['co2'] = data.get('co2_ppm', 0)
+                data['h2o_mb'] = data.get('h2o', 0)
+                data['rht_c'] = data.get('rht', 0.0)
+                data['atmp_mb'] = data.get('atmp', 0)
+                data['dc_ppm'] = data.get('dc', '')
+                data['dt_s'] = data.get('dt', '')
+                data['sr_rate'] = data.get('sr', '')
+                data['rh_pct'] = data.get('rh', '')
+                data['temp_c'] = data.get('temp', '')
                 
                 # Device timestamp
                 from datetime import datetime

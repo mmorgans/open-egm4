@@ -145,7 +145,7 @@ All exports include these columns:
 | Column | Description |
 |--------|-------------|
 | `timestamp` | ISO 8601 timestamp, when record received |
-| `type` | Record type, M for real-time or R for memory |
+| `type` | Record type: M real-time, R memory dump, NOTE field note, SAMPLE static sample |
 | `plot` | Plot number, 0 through 99 |
 | `record` | Record number, 1 through 9999 |
 | `day`, `month`, `hour`, `minute` | Device timestamp components |
@@ -154,10 +154,10 @@ All exports include these columns:
 | `rht_c` | IRGA RH sensor temperature in degrees Celsius |
 | `temp_c` | Temperature in degrees Celsius |
 | `atmp_mb` | Atmospheric pressure in mbar |
-| `par` | PAR light in µmol/m²/s, SRC-1 only |
-| `rh_pct` | Relative humidity in percent, SRC-1 only |
-| `probe_type` | Probe type code, 0 for IRGA, 8 for SRC |
-| `dc_ppm` | Delta CO₂ in ppm, SRC-1 only |
+| `par` | PAR light in µmol/m²/s, when provided by the connected probe |
+| `rh_pct` | Relative humidity in percent, when provided by the connected probe |
+| `probe_type` | Probe type code, such as 0 for IRGA-only or 8 for SRC-1 |
+| `dc_ppm` | Delta CO₂ in ppm, when provided by the connected probe |
 | `dt_s` | Elapsed time in seconds |
 | `sr_rate` | Soil respiration rate, SRC-1 only |
 | `note` | Free-form note text |
@@ -170,9 +170,10 @@ All exports include these columns:
 
 - Empty cells appear for probe-specific fields when not applicable
 - Headers are always included
-- Data order matches session capture order
+- Active-session exports match capture order; resumed sessions are restored by plot/time for chart consistency
 - UTF-8 encoding
 - Regular `N` key notes are exported as `type=NOTE` rows
+- Static sampling captures are exported as `type=SAMPLE` rows
 
 ## Troubleshooting
 
